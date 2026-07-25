@@ -1,10 +1,24 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import { useI18n } from "@/i18n";
+import api, { formatApiError } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function Footer() {
   const { t } = useI18n();
+  const [email, setEmail] = useState("");
+  const subscribe = async (e) => {
+    e.preventDefault();
+    if (!email) return;
+    try {
+      await api.post("/newsletter", { email });
+      toast.success(t.newsletterOk);
+      setEmail("");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
   return (
     <footer className="relative bg-ink text-cream grain overflow-hidden" data-testid="site-footer">
       <div className="relative z-10 max-w-[1600px] mx-auto px-5 md:px-10 pt-20 md:pt-32 pb-10">
@@ -28,9 +42,11 @@ export default function Footer() {
           <div className="md:col-span-3">
             <p className="text-xs tracking-[0.2em] uppercase text-brand font-bold mb-6">{t.footer.newsletter}</p>
             <p className="text-white/60 mb-4">{t.footer.newsletterD}</p>
-            <form className="flex border-b border-white/30 pb-2" onSubmit={(e) => e.preventDefault()}>
+            <form className="flex border-b border-white/30 pb-2" onSubmit={subscribe}>
               <input
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@invovix.store"
                 className="bg-transparent flex-1 outline-none text-white placeholder:text-white/40"
                 data-testid="newsletter-input"

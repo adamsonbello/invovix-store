@@ -6,6 +6,7 @@ import { ArrowUpRight, ArrowRight, ShieldCheck, Truck, Headphones, RefreshCw } f
 import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
+import SEO from "@/components/SEO";
 
 const ease = [0.22, 1, 0.36, 1];
 
@@ -271,6 +272,16 @@ function CtaBand() {
 export default function Home() {
   return (
     <div data-testid="home-page">
+      <SEO
+        path="/"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          name: "Invovix",
+          url: "https://invovix.store",
+          description: "Domotique premium et matériel de télétravail, livrés dans toute la zone euro.",
+        }}
+      />
       <Hero />
       <MarqueeBar />
       <Featured />

@@ -1,5 +1,6 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
 import { LanguageProvider } from "@/i18n";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
@@ -21,7 +22,8 @@ import Admin from "@/pages/Admin";
 function App() {
   return (
     <div className="App">
-      <LanguageProvider>
+      <HelmetProvider>
+        <LanguageProvider>
         <AuthProvider>
           <CartProvider>
             <BrowserRouter>
@@ -59,6 +61,7 @@ function App() {
           </CartProvider>
         </AuthProvider>
       </LanguageProvider>
+      </HelmetProvider>
     </div>
   );
 }

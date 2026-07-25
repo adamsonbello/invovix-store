@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Response
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 
@@ -68,6 +68,16 @@ class ShippingAddress(BaseModel):
 class OrderInput(BaseModel):
     items: List[CartItem]
     shipping_address: ShippingAddress
+
+
+class ReviewInput(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    delivery_rating: int = Field(ge=1, le=5)
+    comment: str = ""
+
+
+class NewsletterInput(BaseModel):
+    email: EmailStr
 
 
 # ----------------------------- Auth -----------------------------
@@ -171,6 +181,87 @@ async def update_product(product_id: str, body: ProductInput, admin: dict = Depe
 async def delete_product(product_id: str, admin: dict = Depends(require_admin)):
     await db.products.delete_one({"id": product_id})
     return {"ok": True}
+
+
+# ----------------------------- Reviews & Ratings -----------------------------
+async def _recompute_product_rating(product_id: str):
+    reviews = await db.reviews.find({"product_id": product_id}, {"_id": 0, "rating": 1, "delivery_rating": 1}).to_list(5000)
+    count = len(reviews)
+    rating_avg = round(sum(r["rating"] for r in reviews) / count, 2) if count else 0.0
+    delivery_avg = round(sum(r["delivery_rating"] for r in reviews) / count, 2) if count else 0.0
+    await db.products.update_one(
+        {"id": product_id},
+        {"$set": {"rating_avg": rating_avg, "rating_count": count, "delivery_avg": delivery_avg}},
+    )
+
+
+@api.get("/products/{product_id}/reviews")
+async def list_reviews(product_id: str):
+    items = await db.reviews.find({"product_id": product_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    count = len(items)
+    rating_avg = round(sum(i["rating"] for i in items) / count, 2) if count else 0.0
+    delivery_avg = round(sum(i["delivery_rating"] for i in items) / count, 2) if count else 0.0
+    return {"items": items, "count": count, "rating_avg": rating_avg, "delivery_avg": delivery_avg}
+
+
+@api.get("/products/{product_id}/can-review")
+async def can_review(product_id: str, user: dict = Depends(get_current_user)):
+    purchased = await db.orders.find_one({"user_id": user["id"], "payment_status": "paid", "items.product_id": product_id})
+    already = await db.reviews.find_one({"product_id": product_id, "user_id": user["id"]})
+    return {"can_review": bool(purchased) and not already, "purchased": bool(purchased), "already_reviewed": bool(already)}
+
+
+@api.post("/products/{product_id}/reviews")
+async def create_review(product_id: str, body: ReviewInput, user: dict = Depends(get_current_user)):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    purchased = await db.orders.find_one({"user_id": user["id"], "payment_status": "paid", "items.product_id": product_id})
+    if not purchased:
+        raise HTTPException(403, "Seuls les acheteurs vérifiés de ce produit peuvent laisser un avis")
+    if await db.reviews.find_one({"product_id": product_id, "user_id": user["id"]}):
+        raise HTTPException(400, "Vous avez déjà laissé un avis pour ce produit")
+    review = {
+        "id": str(uuid.uuid4()),
+        "product_id": product_id,
+        "user_id": user["id"],
+        "user_name": user["name"],
+        "rating": body.rating,
+        "delivery_rating": body.delivery_rating,
+        "comment": body.comment.strip(),
+        "verified_purchase": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.reviews.insert_one(review)
+    await _recompute_product_rating(product_id)
+    review.pop("_id", None)
+    return review
+
+
+@api.post("/newsletter")
+async def subscribe_newsletter(body: NewsletterInput):
+    email = body.email.lower()
+    await db.newsletter.update_one(
+        {"email": email},
+        {"$setOnInsert": {"email": email, "created_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.get("/sitemap.xml")
+async def sitemap():
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    products = await db.products.find({"active": True}, {"_id": 0, "id": 1}).to_list(2000)
+    static_paths = ["/", "/shop", "/shop?category=smart-home", "/shop?category=workspace", "/shop?category=security"]
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for p in static_paths:
+        loc = f"{base}{p}".replace("&", "&amp;")
+        lines.append(f"  <url><loc>{loc}</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>")
+    for prod in products:
+        lines.append(f"  <url><loc>{base}/product/{prod['id']}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>")
+    lines.append("</urlset>")
+    return Response(content="\n".join(lines), media_type="application/xml")
 
 
 # ----------------------------- Orders -----------------------------

@@ -6,6 +6,9 @@ import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import { useCart } from "@/context/CartContext";
 import { toast } from "sonner";
+import SEO from "@/components/SEO";
+import ProductReviews from "@/components/ProductReviews";
+import { Stars } from "@/components/StarRating";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -32,6 +35,30 @@ export default function ProductDetail() {
 
   return (
     <div className="pt-24 md:pt-28" data-testid="product-detail-page">
+      <SEO
+        title={title}
+        description={desc?.slice(0, 160)}
+        path={`/product/${product.id}`}
+        image={product.images?.[0]}
+        type="product"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: title,
+          description: desc,
+          image: product.images,
+          brand: { "@type": "Brand", name: "Invovix" },
+          offers: {
+            "@type": "Offer",
+            price: product.price,
+            priceCurrency: "EUR",
+            availability: "https://schema.org/InStock",
+          },
+          ...(product.rating_count
+            ? { aggregateRating: { "@type": "AggregateRating", ratingValue: product.rating_avg, reviewCount: product.rating_count } }
+            : {}),
+        }}
+      />
       <div className="max-w-[1600px] mx-auto px-5 md:px-10 py-8">
         <Link to="/shop" className="inline-flex items-center gap-2 text-stone hover:text-brand transition-colors mb-8" data-testid="back-to-shop">
           <ArrowLeft className="w-4 h-4" /> {t.product.back}
@@ -62,6 +89,13 @@ export default function ProductDetail() {
               <span className="font-display font-bold text-4xl">{product.price.toFixed(2)}€</span>
               {hasCompare && <span className="text-stone line-through text-2xl">{product.compare_at_price.toFixed(2)}€</span>}
             </div>
+
+            {product.rating_count > 0 && (
+              <div className="flex items-center gap-2 mt-3" data-testid="pd-rating">
+                <Stars value={product.rating_avg} size={18} />
+                <span className="text-sm text-stone">{product.rating_avg?.toFixed(1)} · {product.rating_count} {t.reviews.based}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 mt-4 text-emerald-600 text-sm font-medium">
               <Check className="w-4 h-4" /> {t.product.inStock}
@@ -105,6 +139,8 @@ export default function ProductDetail() {
             </div>
           </div>
         </div>
+
+        <ProductReviews productId={product.id} />
       </div>
     </div>
   );

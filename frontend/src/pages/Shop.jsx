@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
+import SEO from "@/components/SEO";
 
 export default function Shop() {
   const { t } = useI18n();
@@ -38,6 +39,7 @@ export default function Shop() {
 
   return (
     <div className="pt-28 md:pt-36" data-testid="shop-page">
+      <SEO title={t.shop.title} description={t.shop.sub} path="/shop" />
       <div className="max-w-[1600px] mx-auto px-5 md:px-10">
         <div className="border-b border-ink/10 pb-10 mb-10">
           <h1 className="font-display font-black uppercase tracking-tighter leading-[0.9] text-6xl md:text-8xl">
