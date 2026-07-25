@@ -25,6 +25,8 @@ export default function Header() {
     { to: "/shop?category=smart-home", label: t.nav.smartHome },
     { to: "/shop?category=workspace", label: t.nav.workspace },
     { to: "/shop?category=security", label: t.nav.security },
+    { to: "/blog", label: t.nav.blog },
+    { to: "/contact", label: t.nav.contact },
   ];
 
   return (
@@ -85,7 +87,7 @@ export default function Header() {
           ) : (
             <Link
               to="/login"
-              className="hidden md:block text-sm font-medium hover:text-brand transition-colors"
+              className="hidden md:inline-flex items-center bg-ink text-cream text-sm font-medium px-5 py-2 rounded-full hover:bg-brand transition-colors"
               data-testid="nav-login"
             >
               {t.nav.login}

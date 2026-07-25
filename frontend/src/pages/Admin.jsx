@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import BlogEditor from "@/components/BlogEditor";
 
 export default function Admin() {
   const { t } = useI18n();
@@ -43,6 +44,8 @@ export default function Admin() {
             { key: "products", label: t.admin.tabProducts },
             { key: "orders", label: t.admin.tabOrders },
             { key: "cj", label: t.admin.tabCj },
+            { key: "blog", label: t.admin.tabBlog },
+            { key: "messages", label: t.admin.tabMessages },
           ].map((tb) => (
             <button
               key={tb.key}
@@ -369,6 +372,106 @@ function In({ label, value, onChange, type = "text", required, span2 }) {
     <div className={span2 ? "md:col-span-2" : ""}>
       <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{label}</label>
       <input type={type} step="any" value={value} required={required} onChange={(e) => onChange(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors" />
+    </div>
+  );
+}
+
+function BlogTab() {
+  const { t, lang } = useI18n();
+  const [posts, setPosts] = useState([]);
+  const [editing, setEditing] = useState(null); // post object or "new"
+
+  const load = () => api.get("/admin/blog").then((r) => setPosts(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const openEdit = async (id) => {
+    const r = await api.get(`/admin/blog/${id}`);
+    setEditing(r.data);
+  };
+
+  const remove = async (id) => {
+    if (!window.confirm("?")) return;
+    await api.delete(`/admin/blog/${id}`);
+    toast.success("OK");
+    load();
+  };
+
+  return (
+    <div data-testid="admin-blog-tab">
+      <div className="flex justify-between items-center mb-6">
+        <p className="text-stone text-sm">{posts.length}</p>
+        <button
+          onClick={() => setEditing("new")}
+          className="inline-flex items-center gap-2 bg-brand text-white px-5 py-2.5 rounded-full font-medium hover:bg-ink transition-colors"
+          data-testid="blog-new-btn"
+        >
+          <Plus className="w-4 h-4" /> {t.admin.newPost}
+        </button>
+      </div>
+
+      {posts.length === 0 ? (
+        <p className="text-stone py-16 text-center" data-testid="admin-blog-empty">{t.admin.noPosts}</p>
+      ) : (
+        <div className="border border-ink/10 divide-y divide-ink/10">
+          {posts.map((p) => (
+            <div key={p.id} className="flex items-center gap-4 p-4" data-testid={`admin-blog-row-${p.slug}`}>
+              <div className="w-16 h-12 bg-[#f0efed] overflow-hidden shrink-0">
+                {p.cover_image && <img src={p.cover_image} alt="" className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{p.title}</p>
+                <p className="text-stone text-xs">{new Date(p.created_at).toLocaleDateString(lang)} · {p.published ? t.admin.published : "—"}</p>
+              </div>
+              <button onClick={() => openEdit(p.id)} className="text-stone hover:text-brand transition-colors" data-testid={`blog-edit-${p.slug}`}>
+                <Edit className="w-4 h-4" />
+              </button>
+              <button onClick={() => remove(p.id)} className="text-stone hover:text-red-500 transition-colors" data-testid={`blog-delete-${p.slug}`}>
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <BlogEditor
+          post={editing === "new" ? null : editing}
+          onSaved={() => { setEditing(null); load(); }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function MessagesTab() {
+  const { t, lang } = useI18n();
+  const [items, setItems] = useState([]);
+
+  useEffect(() => { api.get("/admin/contacts").then((r) => setItems(r.data.items)).catch(() => {}); }, []);
+
+  return (
+    <div data-testid="admin-messages-tab">
+      {items.length === 0 ? (
+        <p className="text-stone py-16 text-center" data-testid="admin-messages-empty">{t.admin.noMessages}</p>
+      ) : (
+        <div className="space-y-4">
+          {items.map((m) => (
+            <div key={m.id} className="border border-ink/10 p-5" data-testid={`admin-message-${m.id}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-display font-bold text-lg">{m.subject || "—"}</p>
+                  <p className="text-sm text-stone flex items-center gap-2 mt-1">
+                    <Mail className="w-3.5 h-3.5" /> {m.name} · {m.email}
+                  </p>
+                </div>
+                <span className="text-xs text-stone shrink-0">{new Date(m.created_at).toLocaleDateString(lang)}</span>
+              </div>
+              <p className="mt-3 text-ink/80 whitespace-pre-wrap">{m.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 
 const translations = {
   fr: {
-    nav: { shop: "Boutique", smartHome: "Maison connectée", workspace: "Télétravail", security: "Sécurité", story: "Manifeste", account: "Compte", admin: "Admin", login: "Connexion", logout: "Déconnexion", cart: "Panier" },
+    nav: { shop: "Boutique", smartHome: "Maison connectée", workspace: "Télétravail", security: "Sécurité", story: "Manifeste", blog: "Journal", contact: "Contact", account: "Compte", admin: "Admin", login: "Connexion", logout: "Déconnexion", cart: "Panier" },
     hero: { overline: "Domotique premium · Livraison Europe", l1: "La maison", l2: "qui pense", l3: "à votre place.", sub: "Invovix conçoit un écosystème connecté pour la maison intelligente et le télétravail. Objets pensés, livrés dans toute la zone euro.", cta: "Découvrir la boutique", cta2: "Notre manifeste" },
     marquee: ["Maison connectée", "Télétravail", "Sécurité intelligente", "Livraison Europe", "Support FR / EN"],
     featured: { overline: "Sélection", title: "Les essentiels connectés", sub: "Une curation d'objets techniques pour transformer votre quotidien.", all: "Voir toute la boutique" },
