@@ -1,0 +1,120 @@
+{
+  "theme_strategy": "Light Theme Priority (Swiss & High-Contrast Archetype 4)",
+  "brand_identity": {
+    "name": "Invovix",
+    "domain": "invovix.store",
+    "niche": "Smart home (domotique) & premium remote work tech",
+    "vibe": "Awwwards Site-of-the-Day, editorial, premium, highly technical yet accessible, brutalist elegance."
+  },
+  "typography": {
+    "headings": "Cabinet Grotesk (sans-serif) or Clash Display",
+    "body": "Satoshi or IBM Plex Sans",
+    "hierarchy": {
+      "h1": "text-5xl md:text-6xl+ tracking-tighter leading-none font-black uppercase",
+      "h2": "text-4xl md:text-5xl tracking-tight leading-tight font-bold",
+      "h3": "text-2xl md:text-3xl tracking-tight font-medium",
+      "body": "text-base md:text-lg leading-relaxed text-secondary",
+      "labels_overlines": "text-xs tracking-[0.2em] uppercase font-bold text-accent"
+    },
+    "instructions": "CRITICAL: DO NOT use Inter, Roboto, or Space Grotesk. Headings must be tightly tracked. Apply extreme weight contrast (Black vs Light)."
+  },
+  "colors": {
+    "archetype": "Swiss & High-Contrast",
+    "palette": {
+      "background": "#FDFCFB",
+      "surface": "#F5F5F5",
+      "surface_glass": "rgba(253, 252, 251, 0.7)",
+      "text_primary": "#0A0A0A",
+      "text_secondary": "#525252",
+      "brand_accent": "#FF3300",
+      "borders": "#E5E5E5",
+      "dark_mode_invert": {
+        "background": "#0A0A0A",
+        "text_primary": "#FDFCFB",
+        "surface": "#141414",
+        "borders": "#262626"
+      }
+    },
+    "rules": "No full-screen gradients. Color is function only. The UI should be 90% monochrome with the brand accent (#FF3300) used strictly for kinetic moments and primary CTAs."
+  },
+  "grids_and_layouts": {
+    "global_spacing": "Generous. Use p-8, p-12, p-24, py-32 for vertical rhythm.",
+    "bento_grid": "grid-cols-1 md:grid-cols-12 gap-8. Asymmetrical spans. Example: The Hero (col-span-8), The Square (col-span-4).",
+    "product_catalog": "Cardless, technical grid layout (border-collapse style). 1px solid borders separating items. Sharp edges, max 4px radius for UI elements.",
+    "container_rules": "Elements with borders MUST have internal padding (e.g., p-6 or p-8)."
+  },
+  "visual_enhancers": {
+    "header": "Crystal Glassmorphism: backdrop-blur-xl bg-white/70, border-b border-black/5. CRITICAL: Never fully transparent.",
+    "buttons": "Sharp rectangular or fully pill-shaped. High contrast hover states (e.g., hover:bg-brand_accent hover:text-white).",
+    "hero_overlay": "Max overlay bg-black/30. The hero image is a premium asset, let it breathe.",
+    "textures": "Add a subtle noise/grain overlay utility class to kill digital flatness on dark sections."
+  },
+  "motion": {
+    "libraries": [
+      "framer-motion",
+      "lenis",
+      "react-fast-marquee"
+    ],
+    "hero_reveal": "Signature on-load moment: Kinetic line-by-line text reveal using framer-motion (y-axis translation with overflow-hidden mask on text lines).",
+    "scroll": "Smooth momentum scrolling via Lenis is MANDATORY on the root layout.",
+    "marquee": "Slow editorial marquee (react-fast-marquee) for the brand manifesto. High contrast, large uppercase font.",
+    "interactions": "Hover scale-up for product images. Micro-interactions on buttons. Page transitions."
+  },
+  "components": {
+    "marketing_sections": "HTML/Tailwind (div, section) to achieve overlapping, non-standard layouts. Do not restrict to rigid Shadcn cards.",
+    "interactive_logic": "Shadcn UI (Forms, Select, Tabs, Dialogs) Heavily customized to strip the 'Vercel-look'.",
+    "admin_dashboard": "Use tight bento grids, dense data displays, and pure functional utility. High contrast for data legibility.",
+    "testing": "All interactive elements MUST include data-testid (e.g., data-testid='checkout-paypal-btn')."
+  },
+  "media_and_3d": {
+    "3d_strategy": "Subtle parallax on hero images using framer-motion. Keep the focus on premium product photography rather than heavy WebGL, ensuring fast e-commerce load times.",
+    "images": "Use deliberate spotlighting, clipped frames for products."
+  },
+  "image_urls": {
+    "smart_home_hero": [
+      {
+        "url": "https://images.unsplash.com/photo-1499951360447-b19be8fe80f5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwxfHxyZW1vdGUlMjB3b3JrJTIwZGVzayUyMHNldHVwJTIwdGVjaHxlbnwwfHx8fDE3ODQ5OTEyOTZ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Premium desk setup for tech/remote work vibe. Good for 'Workspace' category or Hero section."
+      }
+    ],
+    "product_catalog_placeholders": [
+      {
+        "url": "https://images.pexels.com/photos/16888144/pexels-photo-16888144.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Smart home devices flat lay (bulbs, sensors). Use for smart home product grids."
+      },
+      {
+        "url": "https://images.pexels.com/photos/22307556/pexels-photo-22307556.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Minimalist smart camera and tech. Use for security category."
+      }
+    ],
+    "manifesto_background": [
+      {
+        "url": "https://images.unsplash.com/photo-1510519138101-570d1dca3d66?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwyfHxyZW1vdGUlMjB3b3JrJTIwZGVzayUyMHNldHVwJTIwdGVjaHxlbnwwfHx8fDE3ODQ5OTEyOTZ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Moody, dark remote workspace setup. Excellent background for the numbered manifesto chapters."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "NEVER use generic placeholder texts. The site is bilingual (FR/EN) - build standard language switcher logic.",
+    "Implement Lenis for smooth scrolling in the main Layout wrapper to give a premium feel.",
+    "Create a numbered manifesto section with large overlapping typography (e.g., '01. The Connected Home', '02. Seamless Integration').",
+    "Hero section MUST feature the framer-motion kinetic line-by-line reveal for the H1 on load.",
+    "Products must be displayed in a curated, editorial grid with sharp 1px borders, not a basic padded bootstrap grid.",
+    "Header must use backdrop-blur-xl and NEVER be fully transparent.",
+    "Admin dashboard must be protected by auth, featuring an overview of orders and product management.",
+    "Ensure both Stripe and PayPal are visually integrated into the checkout flow."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic outputs ('AI slop'). Break the rules carefully to create an Awwwards aesthetic.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition (transition: all). Use specific transitions (transform, opacity).",
+    "You MUST NOT center align the app container (.App { text-align: center; }).",
+    "Always use modern button styles (sharp or pill-shaped) with interaction animations.",
+    "NEVER use AI assistant Emoji characters for icons. Use lucide-react or @phosphor-icons/react.",
+    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "All interactive elements MUST include a data-testid attribute for robust automated testing.",
+    "Use sonner for toast notifications."
+  ]
+}
