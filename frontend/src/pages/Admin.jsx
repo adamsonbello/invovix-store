@@ -221,6 +221,10 @@ function CjTab({ onImport }) {
   const [q, setQ] = useState("smart home");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [margin, setMargin] = useState(60);
+  const [category, setCategory] = useState("smart-home");
+  const [importedPids, setImportedPids] = useState({});
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     api.get("/admin/cj/status").then((r) => setConfigured(r.data.configured)).catch(() => setConfigured(false));
@@ -238,13 +242,36 @@ function CjTab({ onImport }) {
     }
   };
 
-  const importProduct = async (pid) => {
+  const importOne = async (pid) => {
+    setImportedPids((s) => ({ ...s, [pid]: "loading" }));
     try {
-      await api.post(`/admin/cj/import/${pid}`);
-      toast.success("Importé");
+      const r = await api.post(`/admin/cj/import/${pid}?margin=${Number(margin)}&category=${category}`);
+      setImportedPids((s) => ({ ...s, [pid]: "done" }));
+      toast.success(`${t.admin.imported}: ${(r.data.title || "").slice(0, 28)} · ${r.data.price}€`);
+      onImport();
+    } catch (e) {
+      setImportedPids((s) => ({ ...s, [pid]: undefined }));
+      toast.error(formatApiError(e.response?.data?.detail));
+    }
+  };
+
+  const importAll = async () => {
+    const pids = results.map((p) => p.pid).filter((pid) => importedPids[pid] !== "done");
+    if (!pids.length) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/admin/cj/import-bulk`, { pids, margin: Number(margin), category });
+      const done = {};
+      (r.data.results || []).forEach((x) => {
+        if (x.status === "imported" || x.status === "skipped") done[x.pid] = "done";
+      });
+      setImportedPids((s) => ({ ...s, ...done }));
+      toast.success(`${r.data.imported} importés · ${r.data.skipped} déjà présents · ${r.data.errors} erreurs`);
       onImport();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -259,25 +286,79 @@ function CjTab({ onImport }) {
 
   return (
     <div data-testid="admin-cj-tab">
-      <div className="flex gap-2 mb-8 max-w-xl">
+      <div className="flex gap-2 mb-4 max-w-xl">
         <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.admin.cjSearch} className="w-full pl-11 pr-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="cj-search-input" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && search()}
+            placeholder={t.admin.cjSearch}
+            className="w-full pl-11 pr-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink"
+            data-testid="cj-search-input"
+          />
         </div>
-        <button onClick={search} className="bg-ink text-cream px-6 rounded-none font-medium hover:bg-brand transition-colors" data-testid="cj-search-btn">
+        <button onClick={search} className="bg-ink text-cream px-6 font-medium hover:bg-brand transition-colors" data-testid="cj-search-btn">
           {loading ? "…" : t.admin.cjSearch}
         </button>
       </div>
+
+      <div className="flex flex-wrap items-end gap-4 mb-8 p-4 bg-surface border border-ink/10">
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.margin}</label>
+          <input
+            type="number"
+            value={margin}
+            onChange={(e) => setMargin(e.target.value)}
+            className="w-28 px-4 py-2.5 border border-ink/20 bg-cream outline-none focus:border-ink"
+            data-testid="cj-margin"
+          />
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.pcat}</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="px-4 py-2.5 border border-ink/20 bg-cream outline-none" data-testid="cj-category">
+            <option value="smart-home">smart-home</option>
+            <option value="workspace">workspace</option>
+            <option value="security">security</option>
+          </select>
+        </div>
+        {results.length > 0 && (
+          <button
+            onClick={importAll}
+            disabled={busy}
+            className="ml-auto bg-brand text-white px-6 py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50 flex items-center gap-2"
+            data-testid="cj-import-all"
+          >
+            <Download className="w-4 h-4" /> {busy ? t.admin.importing : `${t.admin.importAll} (${results.length})`}
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {results.map((p) => (
-          <div key={p.pid} className="border border-ink/10 p-3">
-            <img src={(p.productImage || (p.productImageSet || [])[0])} alt="" className="w-full aspect-square object-cover bg-[#f0efed]" />
-            <p className="text-sm mt-2 line-clamp-2">{p.productNameEn || p.productName}</p>
-            <button onClick={() => importProduct(p.pid)} className="w-full mt-2 border border-ink text-sm py-2 hover:bg-ink hover:text-cream transition-colors" data-testid={`cj-import-${p.pid}`}>
-              {t.admin.cjImport}
-            </button>
-          </div>
-        ))}
+        {results.map((p) => {
+          const st = importedPids[p.pid];
+          return (
+            <div key={p.pid} className="border border-ink/10 p-3">
+              <img
+                src={p.productImage || (p.productImageSet || [])[0]}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="w-full aspect-square object-cover bg-[#f0efed]"
+              />
+              <p className="text-sm mt-2 line-clamp-2 h-10">{p.productNameEn || p.productName}</p>
+              <button
+                onClick={() => importOne(p.pid)}
+                disabled={st === "loading" || st === "done"}
+                className={`w-full mt-2 text-sm py-2 transition-colors disabled:opacity-70 ${
+                  st === "done" ? "bg-emerald-600 text-white" : "border border-ink hover:bg-ink hover:text-cream"
+                }`}
+                data-testid={`cj-import-${p.pid}`}
+              >
+                {st === "done" ? t.admin.imported : st === "loading" ? t.admin.importing : t.admin.cjImport}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

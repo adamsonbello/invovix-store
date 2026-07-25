@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 import logging
 import httpx
 from urllib.parse import quote
@@ -81,6 +82,12 @@ class ReviewInput(BaseModel):
 
 class NewsletterInput(BaseModel):
     email: EmailStr
+
+
+class BulkImportInput(BaseModel):
+    pids: List[str]
+    margin: float = 60
+    category: str = "smart-home"
 
 
 # ----------------------------- Auth -----------------------------
@@ -428,21 +435,53 @@ async def _localize_images(urls: list, pid: str) -> list:
     return local
 
 
+async def _do_import(pid: str, margin: float, category: str, featured: bool = False) -> dict:
+    product = await cjmod.import_product(pid)
+    if await db.products.find_one({"cj_pid": product["cj_pid"]}):
+        return {"pid": pid, "status": "skipped", "reason": "already imported"}
+    cost = product.get("cost_price") or 0
+    markup = 1 + (max(margin, 0) / 100.0)
+    if cost:
+        product["price"] = round(cost * markup, 2)
+        product["compare_at_price"] = round(product["price"] * 1.35, 2)
+    product["category"] = category or product.get("category", "smart-home")
+    product["featured"] = featured
+    product["images"] = await _localize_images(product.get("images", []), product["id"])
+    await db.products.insert_one(product)
+    return {"pid": pid, "status": "imported", "title": product["title"], "price": product["price"]}
+
+
 @api.post("/admin/cj/import/{pid}")
-async def cj_import(pid: str, admin: dict = Depends(require_admin)):
+async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: float = 60, category: str = "smart-home", featured: bool = False):
     if not cjmod.cj_configured():
         raise HTTPException(503, "Clé API CJDropshipping non configurée")
     try:
-        product = await cjmod.import_product(pid)
+        res = await _do_import(pid, margin, category, featured)
     except Exception as e:
         raise HTTPException(502, f"Erreur import CJ: {e}")
-    existing = await db.products.find_one({"cj_pid": product["cj_pid"]})
-    if existing:
+    if res["status"] == "skipped":
         raise HTTPException(400, "Ce produit est déjà importé")
-    product["images"] = await _localize_images(product.get("images", []), product["id"])
-    await db.products.insert_one(product)
-    product.pop("_id", None)
-    return product
+    return res
+
+
+@api.post("/admin/cj/import-bulk")
+async def cj_import_bulk(body: BulkImportInput, admin: dict = Depends(require_admin)):
+    if not cjmod.cj_configured():
+        raise HTTPException(503, "Clé API CJDropshipping non configurée")
+    results = []
+    for i, pid in enumerate(body.pids[:40]):
+        if i > 0:
+            await asyncio.sleep(1.2)
+        try:
+            results.append(await _do_import(pid, body.margin, body.category))
+        except Exception as e:
+            results.append({"pid": pid, "status": "error", "reason": str(e)})
+    return {
+        "imported": sum(1 for r in results if r["status"] == "imported"),
+        "skipped": sum(1 for r in results if r["status"] == "skipped"),
+        "errors": sum(1 for r in results if r["status"] == "error"),
+        "results": results,
+    }
 
 
 # ----------------------------- Stripe webhook (Flow B path) -----------------------------
