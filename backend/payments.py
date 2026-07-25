@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -10,6 +11,7 @@ from emergentintegrations.payments.stripe.checkout import StripeCheckout, Checko
 
 from database import db
 from security import get_current_user
+import fulfillment
 
 payments_router = APIRouter(prefix="/api/payments")
 
@@ -89,6 +91,7 @@ async def payment_status(session_id: str, request: Request):
                     {"id": record["order_id"], "payment_status": {"$ne": "paid"}},
                     {"$set": {"payment_status": "paid", "status": "processing", "updated_at": datetime.now(timezone.utc).isoformat()}},
                 )
+                asyncio.create_task(fulfillment.handle_paid_order(record["order_id"]))
                 record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
         except Exception:
             pass
@@ -154,6 +157,7 @@ async def paypal_capture(paypal_order_id: str, user: dict = Depends(get_current_
             {"id": ref_id},
             {"$set": {"payment_status": "paid", "status": "processing", "updated_at": datetime.now(timezone.utc).isoformat()}},
         )
+        asyncio.create_task(fulfillment.handle_paid_order(ref_id))
     return {"status": cap.get("status"), "order_id": ref_id, "paid": paid}
 
 

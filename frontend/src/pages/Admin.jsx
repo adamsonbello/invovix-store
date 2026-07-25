@@ -194,6 +194,7 @@ function ProductsTab({ onChange }) {
 function OrdersTab() {
   const { t } = useI18n();
   const [orders, setOrders] = useState([]);
+  const [busy, setBusy] = useState("");
   const statuses = ["pending", "processing", "shipped", "delivered", "cancelled"];
   const load = () => api.get("/admin/orders").then((r) => setOrders(r.data.items));
   useEffect(() => { load(); }, []);
@@ -204,20 +205,61 @@ function OrdersTab() {
     toast.success("OK");
   };
 
+  const fulfill = async (id) => {
+    setBusy(id + "-f");
+    try {
+      const r = await api.post(`/admin/orders/${id}/fulfill`);
+      if (r.data.cj_order_id) toast.success(`CJ #${r.data.cj_order_id}`);
+      else toast.error(r.data.fulfillment_error || "Erreur CJ");
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(""); }
+  };
+
+  const syncCj = async (id) => {
+    setBusy(id + "-s");
+    try {
+      const r = await api.post(`/admin/orders/${id}/sync-cj`);
+      toast.success(r.data.ok ? `${r.data.status || "OK"}${r.data.tracking_number ? " · " + r.data.tracking_number : ""}` : (r.data.reason || "—"));
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(""); }
+  };
+
   return (
     <div className="border border-ink/10 divide-y divide-ink/10" data-testid="admin-orders-tab">
       {orders.length === 0 && <p className="p-8 text-stone text-center">{t.account.noOrders}</p>}
       {orders.map((o) => (
-        <div key={o.id} className="p-5 flex flex-wrap items-center gap-4" data-testid={`admin-order-${o.id}`}>
-          <div className="flex-1 min-w-[180px]">
-            <p className="font-medium">#{o.id.slice(0, 8).toUpperCase()}</p>
-            <p className="text-stone text-sm">{o.user_email} · {new Date(o.created_at).toLocaleDateString()}</p>
+        <div key={o.id} className="p-5" data-testid={`admin-order-${o.id}`}>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[180px]">
+              <p className="font-medium">#{o.id.slice(0, 8).toUpperCase()}</p>
+              <p className="text-stone text-sm">{o.user_email} · {new Date(o.created_at).toLocaleDateString()}</p>
+            </div>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${o.payment_status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{o.payment_status}</span>
+            <p className="font-display font-bold text-lg w-24 text-right">{o.total.toFixed(2)}€</p>
+            <select value={o.status} onChange={(e) => setStatus(o.id, e.target.value)} className="border border-ink/20 px-3 py-2 bg-transparent outline-none text-sm" data-testid={`order-status-${o.id}`}>
+              {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
-          <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${o.payment_status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{o.payment_status}</span>
-          <p className="font-display font-bold text-lg w-24 text-right">{o.total.toFixed(2)}€</p>
-          <select value={o.status} onChange={(e) => setStatus(o.id, e.target.value)} className="border border-ink/20 px-3 py-2 bg-transparent outline-none text-sm" data-testid={`order-status-${o.id}`}>
-            {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div className="flex flex-wrap items-center gap-3 mt-3 text-sm">
+            {o.cj_order_id ? (
+              <span className="text-stone">CJ #{o.cj_order_id}{o.cj_shipping_status ? ` · ${o.cj_shipping_status}` : ""}</span>
+            ) : (
+              <button onClick={() => fulfill(o.id)} disabled={busy === o.id + "-f"} className="px-3 py-1.5 border border-ink text-xs font-medium hover:bg-ink hover:text-cream transition-colors disabled:opacity-50" data-testid={`order-fulfill-${o.id}`}>
+                {busy === o.id + "-f" ? "…" : "Fulfill CJ"}
+              </button>
+            )}
+            {o.cj_order_id && (
+              <button onClick={() => syncCj(o.id)} disabled={busy === o.id + "-s"} className="px-3 py-1.5 border border-ink/30 text-xs font-medium hover:border-ink transition-colors disabled:opacity-50" data-testid={`order-sync-${o.id}`}>
+                {busy === o.id + "-s" ? "…" : "Sync suivi"}
+              </button>
+            )}
+            {o.tracking_number && (
+              <span className="text-brand font-medium" data-testid={`order-tracking-${o.id}`}>📦 {o.logistic_name || ""} {o.tracking_number}</span>
+            )}
+            {o.fulfillment_error && <span className="text-red-500 text-xs">{o.fulfillment_error}</span>}
+          </div>
         </div>
       ))}
     </div>

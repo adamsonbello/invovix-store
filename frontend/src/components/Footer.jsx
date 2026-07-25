@@ -64,10 +64,12 @@ export default function Footer() {
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pt-8 text-sm text-white/40">
           <p>© {new Date().getFullYear()} Invovix · invovix.store · {t.footer.rights}</p>
-          <div className="flex gap-6">
+          <div className="flex gap-6 flex-wrap">
             <Link to="/faq" className="hover:text-white transition-colors">{t.footer.faq}</Link>
             <Link to="/contact" className="hover:text-white transition-colors">{t.footer.contact}</Link>
-            <span className="hover:text-white transition-colors cursor-pointer">{t.footer.legal}</span>
+            <Link to="/legal/mentions" className="hover:text-white transition-colors">{t.footer.legal}</Link>
+            <Link to="/legal/cgv" className="hover:text-white transition-colors">{t.footer.cgv}</Link>
+            <Link to="/legal/confidentialite" className="hover:text-white transition-colors">{t.footer.privacy}</Link>
           </div>
         </div>
       </div>

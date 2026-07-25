@@ -49,7 +49,8 @@ async def cj_request(method: str, path: str, *, params=None, json=None):
     headers = {"CJ-Access-Token": token, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=40) as c:
         r = await c.request(method, f"{CJ_BASE_URL}{path}", headers=headers, params=params, json=json)
-        r.raise_for_status()
+        if r.status_code >= 400:
+            raise RuntimeError(f"CJ HTTP {r.status_code}: {r.text[:400]}")
         data = r.json()
     if not data.get("result"):
         tok = await _get_tokens()
@@ -130,3 +131,73 @@ async def import_product(pid: str) -> dict:
     data = await cj_request("GET", "/product/query", params={"pid": pid})
     detail = data.get("data") or {}
     return normalize_cj_product(detail)
+
+
+# ----------------------------- Order fulfillment -----------------------------
+EUROZONE_CODES = {
+    "france": "FR", "belgique": "BE", "belgium": "BE", "allemagne": "DE", "germany": "DE",
+    "espagne": "ES", "spain": "ES", "italie": "IT", "italy": "IT", "pays-bas": "NL",
+    "netherlands": "NL", "portugal": "PT", "irlande": "IE", "ireland": "IE",
+    "autriche": "AT", "austria": "AT", "finlande": "FI", "finland": "FI",
+    "grèce": "GR", "grece": "GR", "greece": "GR", "luxembourg": "LU",
+    "slovaquie": "SK", "slovakia": "SK", "slovénie": "SI", "slovenia": "SI",
+    "estonie": "EE", "estonia": "EE", "lettonie": "LV", "latvia": "LV",
+    "lituanie": "LT", "lithuania": "LT", "chypre": "CY", "cyprus": "CY",
+    "malte": "MT", "malta": "MT", "croatie": "HR", "croatia": "HR",
+}
+
+
+def country_to_code(name: str) -> str:
+    if not name:
+        return "FR"
+    n = name.strip()
+    if len(n) == 2:
+        return n.upper()
+    return EUROZONE_CODES.get(n.lower(), "FR")
+
+
+def _variant_id(product: dict) -> str:
+    for v in (product.get("cj_variants") or []):
+        vid = v.get("vid") or v.get("variantId") or v.get("id")
+        if vid:
+            return str(vid)
+    return ""
+
+
+async def create_cj_order(order: dict) -> dict:
+    """Create a fulfillment order on CJDropshipping for a paid Invovix order."""
+    products = []
+    for it in order.get("items", []):
+        p = await db.products.find_one({"id": it["product_id"]}, {"_id": 0})
+        if not p:
+            raise RuntimeError(f"Produit introuvable: {it['product_id']}")
+        vid = _variant_id(p)
+        if not vid:
+            raise RuntimeError(f"Produit sans variante CJ (non-dropshipping): {p.get('title','')}")
+        products.append({"vid": vid, "quantity": int(it["quantity"])})
+
+    addr = order.get("shipping_address") or {}
+    pay_type = int(os.environ.get("CJ_PAY_TYPE", "3"))  # 3 = create without auto-payment
+    payload = {
+        "orderNumber": order["id"],
+        "fromCountryCode": os.environ.get("CJ_FROM_COUNTRY", "CN"),
+        "shippingCountryCode": country_to_code(addr.get("country")),
+        "shippingCountry": addr.get("country") or "France",
+        "shippingProvince": addr.get("city") or "",
+        "shippingCity": addr.get("city") or "",
+        "shippingAddress": addr.get("address") or "",
+        "shippingCustomerName": addr.get("full_name") or "Client",
+        "shippingZip": addr.get("postal_code") or "",
+        "shippingPhone": addr.get("phone") or "0000000000",
+        "logisticName": os.environ.get("CJ_DEFAULT_LOGISTIC", "CJPacket Ordinary"),
+        "remark": "Invovix",
+        "payType": pay_type,
+        "products": products,
+    }
+    data = await cj_request("POST", "/shopping/order/createOrderV2", json=payload)
+    return data.get("data") or {}
+
+
+async def get_cj_order(cj_order_id: str) -> dict:
+    data = await cj_request("GET", "/shopping/order/getOrderDetail", params={"orderId": cj_order_id})
+    return data.get("data") or {}

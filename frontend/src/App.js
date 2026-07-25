@@ -24,6 +24,7 @@ import Blog from "@/pages/Blog";
 import BlogPost from "@/pages/BlogPost";
 import FAQ from "@/pages/FAQ";
 import Wishlist from "@/pages/Wishlist";
+import Legal from "@/pages/Legal";
 
 function App() {
   return (
@@ -49,6 +50,7 @@ function App() {
                   <Route path="/blog" element={<Blog />} />
                   <Route path="/blog/:slug" element={<BlogPost />} />
                   <Route path="/faq" element={<FAQ />} />
+                  <Route path="/legal/:doc" element={<Legal />} />
                   <Route
                     path="/wishlist"
                     element={

@@ -49,6 +49,15 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 - **Sitemap** enrichi : URLs des articles de blog + /faq + /contact. VÉRIFIÉ.
 
 ## Pending / Requires user action
+
+## Implemented (2026-06 — session Catalogue CJ + Fulfillment + Légal + Emails)
+- **Seed catalogue CJ réel** : script `/app/scripts/seed_cj.py` (recherche + import en masse via API admin, pacing anti‑429, marge 55%). **23 produits réels** importés sur les 3 catégories. VÉRIFIÉ. NB : la recherche CJ étant floue, quelques produits sont hors‑niche → à épurer via l'admin.
+- **Fulfillment CJ automatique** : à chaque commande **payée** (Stripe/PayPal/webhook), création auto de la commande fournisseur CJ (`createOrderV2`, payType=3 par défaut) + email de confirmation. Endpoints admin `POST /admin/orders/{id}/fulfill` (relance) et `POST /admin/orders/{id}/sync-cj` (récupère statut/numéro de suivi et déclenche l'email d'expédition). UI admin : boutons Fulfill/Sync + affichage suivi. VÉRIFIÉ de bout en bout (commande CJ réelle SD… créée, sync=CREATED).
+  - Config (env, défauts fonctionnels) : `CJ_AUTO_FULFILL=true`, `CJ_PAY_TYPE=3`, `CJ_FROM_COUNTRY=CN`, `CJ_DEFAULT_LOGISTIC="CJPacket Ordinary"`.
+- **Emails transactionnels complets** (Brevo) : **confirmation de commande** (au paiement, idempotent), **expédition + suivi** (au passage "shipped" ou via sync CJ), + review post‑livraison (existant). Suivi colis affiché aussi dans l'espace client (/account). VÉRIFIÉ (Brevo 201).
+- **Pages légales RGPD/CGV** : `/legal/mentions`, `/legal/cgv`, `/legal/confidentialite` (contenu FR/EN, placeholders [À COMPLÉTER] pour infos société) + **bandeau consentement cookies** (accept/refuse, push dataLayer GTM). Liens footer + sitemap. VÉRIFIÉ.
+
+## Requires user action (mise à jour)
 - **reCAPTCHA v3** : ajouter le domaine de production `invovix.store` **ET** le domaine de preview aux domaines autorisés dans la console Google reCAPTCHA pour activer le scoring anti-bot complet (actuellement soft-fail hors invovix.store).
 - **WhatsApp** : renseigner le numéro international dans /admin > Réglages et activer le bouton.
 - PayPal **Live** : nécessite un compte Business (les clés actuelles sont Sandbox/test).

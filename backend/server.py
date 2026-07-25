@@ -20,6 +20,7 @@ from security import (
 )
 import cj as cjmod
 import brevo as brevomod
+import fulfillment as fulfillmod
 from payments import payments_router
 from extras import extras_router, validate_promo, seed_extras
 
@@ -439,7 +440,8 @@ async def sitemap():
     products = await db.products.find({"active": True}, {"_id": 0, "id": 1}).to_list(2000)
     posts = await db.blog_posts.find({"published": True}, {"_id": 0, "slug": 1}).to_list(500)
     static_paths = ["/", "/shop", "/shop?category=smart-home", "/shop?category=workspace",
-                    "/shop?category=security", "/blog", "/contact", "/faq"]
+                    "/shop?category=security", "/blog", "/contact", "/faq",
+                    "/legal/mentions", "/legal/cgv", "/legal/confidentialite"]
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for p in static_paths:
         loc = f"{base}{p}".replace("&", "&amp;")
@@ -569,18 +571,43 @@ async def admin_update_order(order_id: str, background_tasks: BackgroundTasks, s
     if not order:
         raise HTTPException(404, "Commande introuvable")
     await db.orders.update_one({"id": order_id}, {"$set": {"status": status}})
+    order["status"] = status
     email_queued = False
+    addr = order.get("shipping_address") or {}
+    to_email = addr.get("email") or order.get("user_email")
+    to_name = addr.get("full_name") or "Client"
+
+    if status == "shipped" and not order.get("shipping_email_sent"):
+        background_tasks.add_task(brevomod.send_shipping_notification, to_email, to_name, order, os.environ.get("FRONTEND_URL", ""))
+        await db.orders.update_one({"id": order_id}, {"$set": {"shipping_email_sent": True}})
+        email_queued = True
+
     if status == "delivered" and not order.get("review_email_sent"):
-        addr = order.get("shipping_address") or {}
-        to_email = addr.get("email") or order.get("user_email")
-        to_name = addr.get("full_name") or "Client"
-        order["status"] = "delivered"
         background_tasks.add_task(
             brevomod.send_review_request, to_email, to_name, order, os.environ.get("FRONTEND_URL", "")
         )
         await db.orders.update_one({"id": order_id}, {"$set": {"review_email_sent": True}})
         email_queued = True
-    return {"ok": True, "review_email_queued": email_queued, "brevo_configured": brevomod.brevo_configured()}
+    return {"ok": True, "email_queued": email_queued, "brevo_configured": brevomod.brevo_configured()}
+
+
+@api.post("/admin/orders/{order_id}/fulfill")
+async def admin_fulfill_order(order_id: str, admin: dict = Depends(require_admin)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Commande introuvable")
+    await fulfillmod.handle_paid_order(order_id)
+    refreshed = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return {
+        "cj_order_id": refreshed.get("cj_order_id"),
+        "fulfillment_status": refreshed.get("fulfillment_status"),
+        "fulfillment_error": refreshed.get("fulfillment_error"),
+    }
+
+
+@api.post("/admin/orders/{order_id}/sync-cj")
+async def admin_sync_cj(order_id: str, admin: dict = Depends(require_admin)):
+    return await fulfillmod.sync_cj_order(order_id)
 
 
 # ----------------------------- CJ Dropshipping (admin) -----------------------------
@@ -695,6 +722,7 @@ async def stripe_webhook(request: Request):
                 {"id": oid, "payment_status": {"$ne": "paid"}},
                 {"$set": {"payment_status": "paid", "status": "processing", "updated_at": datetime.now(timezone.utc).isoformat()}},
             )
+            asyncio.create_task(fulfillmod.handle_paid_order(oid))
     return {"status": "ok"}
 
 

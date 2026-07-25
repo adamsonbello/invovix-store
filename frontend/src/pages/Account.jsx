@@ -57,6 +57,17 @@ export default function Account() {
                     <img key={it.product_id} src={it.image} alt={it.title} className="w-14 h-16 object-cover bg-[#f0efed]" title={it.title} />
                   ))}
                 </div>
+                {o.tracking_number && (
+                  <a
+                    href={o.tracking_url || `https://parcelsapp.com/en/tracking/${o.tracking_number}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-4 text-brand font-medium text-sm hover:text-ink transition-colors"
+                    data-testid={`account-tracking-${o.id}`}
+                  >
+                    📦 {t.account.track}: {o.logistic_name ? `${o.logistic_name} · ` : ""}{o.tracking_number}
+                  </a>
+                )}
               </div>
             ))}
           </div>

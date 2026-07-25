@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import PromoBanner from "@/components/PromoBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import NewsletterPopup from "@/components/NewsletterPopup";
+import CookieConsent from "@/components/CookieConsent";
 import api from "@/lib/api";
 import { useI18n } from "@/i18n";
 import { loadRecaptcha } from "@/lib/recaptcha";
@@ -65,6 +66,7 @@ export default function Layout() {
         <WhatsAppButton number={settings.whatsapp_number} />
       )}
       <NewsletterPopup />
+      <CookieConsent />
     </div>
   );
 }
