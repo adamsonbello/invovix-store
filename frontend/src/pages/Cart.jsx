@@ -1,15 +1,35 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, X, ArrowRight, ShoppingBag } from "lucide-react";
+import { Minus, Plus, X, ArrowRight, ShoppingBag, Tag } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useCart } from "@/context/CartContext";
+import api, { formatApiError } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function Cart() {
   const { t, lang } = useI18n();
-  const { items, updateQty, remove, subtotal } = useCart();
+  const { items, updateQty, remove, subtotal, promo, applyPromo, removePromo, discount } = useCart();
   const navigate = useNavigate();
+  const [code, setCode] = useState("");
+  const [checking, setChecking] = useState(false);
   const shipping = subtotal >= 50 || subtotal === 0 ? 0 : 4.9;
-  const total = subtotal + shipping;
+  const total = Math.max(0, subtotal + shipping - discount);
+
+  const applyCode = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) return;
+    setChecking(true);
+    try {
+      const r = await api.post("/promo/validate", { code, subtotal });
+      applyPromo(r.data);
+      toast.success(t.promo.applied);
+      setCode("");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || t.promo.invalid);
+    } finally {
+      setChecking(false);
+    }
+  };
 
   if (items.length === 0) {
     return (
@@ -66,8 +86,34 @@ export default function Cart() {
           <div className="lg:col-span-1">
             <div className="bg-surface p-8 sticky top-28">
               <h2 className="font-display font-bold text-xl mb-6">{t.checkout.summary}</h2>
+
+              <div className="mb-6">
+                {promo ? (
+                  <div className="flex items-center justify-between bg-brand/10 text-brand px-4 py-3 rounded-lg" data-testid="promo-applied">
+                    <span className="flex items-center gap-2 font-medium text-sm"><Tag className="w-4 h-4" /> {promo.code}</span>
+                    <button onClick={removePromo} className="text-brand hover:text-ink transition-colors" data-testid="promo-remove"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <form onSubmit={applyCode} className="flex gap-2">
+                    <input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      placeholder={t.promo.placeholder}
+                      className="flex-1 px-4 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors text-sm"
+                      data-testid="promo-input"
+                    />
+                    <button type="submit" disabled={checking} className="px-4 py-2.5 border border-ink font-medium text-sm hover:bg-ink hover:text-cream transition-colors disabled:opacity-50" data-testid="promo-apply">
+                      {t.promo.apply}
+                    </button>
+                  </form>
+                )}
+              </div>
+
               <div className="space-y-3 text-sm border-b border-ink/10 pb-6">
                 <div className="flex justify-between"><span className="text-stone">{t.cart.subtotal}</span><span>{subtotal.toFixed(2)}€</span></div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-brand font-medium" data-testid="cart-discount"><span>{t.promo.discount}</span><span>−{discount.toFixed(2)}€</span></div>
+                )}
                 <div className="flex justify-between"><span className="text-stone">{t.cart.shipping}</span><span>{shipping === 0 ? t.cart.free : `${shipping.toFixed(2)}€`}</span></div>
               </div>
               <div className="flex justify-between items-baseline py-6">

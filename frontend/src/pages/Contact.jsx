@@ -2,12 +2,13 @@ import React, { useState } from "react";
 import { Mail, Send, Clock, MapPin } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
+import { executeRecaptcha } from "@/lib/recaptcha";
 import SEO from "@/components/SEO";
 import { toast } from "sonner";
 
 export default function Contact() {
   const { t } = useI18n();
-  const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", subject: "", message: "", website: "" });
   const [sending, setSending] = useState(false);
   const c = t.contactPage;
 
@@ -15,9 +16,10 @@ export default function Contact() {
     e.preventDefault();
     setSending(true);
     try {
-      await api.post("/contact", form);
+      const token = await executeRecaptcha("contact");
+      await api.post("/contact", { ...form, recaptcha_token: token });
       toast.success(c.ok);
-      setForm({ name: "", email: "", subject: "", message: "" });
+      setForm({ name: "", email: "", subject: "", message: "", website: "" });
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -36,6 +38,7 @@ export default function Contact() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 mt-16">
           <form onSubmit={submit} className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+            <input type="text" value={form.website} onChange={set("website")} className="hidden" tabIndex={-1} autoComplete="off" aria-hidden="true" />
             <Field label={c.name} value={form.name} onChange={set("name")} required testid="contact-name" />
             <Field label={c.email} type="email" value={form.email} onChange={set("email")} required testid="contact-email" />
             <Field label={c.subject} value={form.subject} onChange={set("subject")} span2 testid="contact-subject" />

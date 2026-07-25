@@ -10,7 +10,7 @@ import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 export default function Checkout() {
   const { t, lang } = useI18n();
-  const { items, subtotal, clear } = useCart();
+  const { items, subtotal, clear, promo, discount } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [method, setMethod] = useState("stripe");
@@ -27,7 +27,7 @@ export default function Checkout() {
   });
 
   const shipping = subtotal >= 50 ? 0 : 4.9;
-  const total = subtotal + shipping;
+  const total = Math.max(0, subtotal + shipping - discount);
 
   useEffect(() => {
     api.get("/payments/config").then((r) => setConfig(r.data)).catch(() => {});
@@ -43,6 +43,7 @@ export default function Checkout() {
     const res = await api.post("/orders", {
       items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
       shipping_address: form,
+      promo_code: promo?.code || "",
     });
     return res.data;
   };
@@ -157,6 +158,9 @@ export default function Checkout() {
               </div>
               <div className="space-y-2 text-sm border-t border-ink/10 pt-4">
                 <div className="flex justify-between"><span className="text-stone">{t.cart.subtotal}</span><span>{subtotal.toFixed(2)}€</span></div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-brand font-medium" data-testid="checkout-discount"><span>{t.promo.discount} ({promo?.code})</span><span>−{discount.toFixed(2)}€</span></div>
+                )}
                 <div className="flex justify-between"><span className="text-stone">{t.cart.shipping}</span><span>{shipping === 0 ? t.cart.free : `${shipping.toFixed(2)}€`}</span></div>
               </div>
               <div className="flex justify-between items-baseline py-5 border-t border-ink/10 mt-2">

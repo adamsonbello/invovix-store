@@ -15,6 +15,21 @@ export function CartProvider({ children }) {
     localStorage.setItem("invovix_cart", JSON.stringify(items));
   }, [items]);
 
+  const [promo, setPromo] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("invovix_promo")) || null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("invovix_promo", JSON.stringify(promo));
+  }, [promo]);
+
+  const applyPromo = (p) => setPromo(p);
+  const removePromo = () => setPromo(null);
+
   const add = (product, quantity = 1) => {
     setItems((prev) => {
       const existing = prev.find((i) => i.product_id === product.id);
@@ -43,13 +58,21 @@ export function CartProvider({ children }) {
   };
 
   const remove = (productId) => setItems((prev) => prev.filter((i) => i.product_id !== productId));
-  const clear = () => setItems([]);
+  const clear = () => { setItems([]); setPromo(null); };
 
   const count = items.reduce((s, i) => s + i.quantity, 0);
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
 
+  let discount = 0;
+  if (promo && subtotal >= (promo.min_subtotal || 0)) {
+    discount = promo.type === "percent"
+      ? Number((subtotal * promo.value / 100).toFixed(2))
+      : Math.min(Number(promo.value), subtotal);
+  }
+  const validPromo = discount > 0 ? promo : null;
+
   return (
-    <CartContext.Provider value={{ items, add, updateQty, remove, clear, count, subtotal }}>
+    <CartContext.Provider value={{ items, add, updateQty, remove, clear, count, subtotal, promo: validPromo, applyPromo, removePromo, discount }}>
       {children}
     </CartContext.Provider>
   );

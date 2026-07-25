@@ -1,15 +1,32 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, Heart } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { toast } from "sonner";
 
 export default function ProductCard({ product, index = 0 }) {
   const { lang, t } = useI18n();
   const { add } = useCart();
+  const { user } = useAuth();
+  const { has, toggle } = useWishlist();
+  const navigate = useNavigate();
   const title = lang === "en" ? product.title_en || product.title : product.title;
   const hasCompare = product.compare_at_price > product.price;
+  const wished = has(product.id);
+
+  const onWish = async (e) => {
+    e.preventDefault();
+    if (!user) {
+      toast.error(t.wishlist.loginFirst);
+      navigate("/login");
+      return;
+    }
+    const added = await toggle(product.id);
+    toast.success(added ? t.wishlist.added : t.wishlist.removed);
+  };
 
   return (
     <div
@@ -28,6 +45,16 @@ export default function ProductCard({ product, index = 0 }) {
               -{Math.round(((product.compare_at_price - product.price) / product.compare_at_price) * 100)}%
             </span>
           )}
+          <button
+            onClick={onWish}
+            className={`absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              wished ? "bg-brand text-white" : "bg-cream/80 backdrop-blur text-ink hover:bg-cream"
+            }`}
+            data-testid={`wishlist-toggle-${product.id}`}
+            aria-label="toggle wishlist"
+          >
+            <Heart className="w-4 h-4" fill={wished ? "currentColor" : "none"} />
+          </button>
           <button
             onClick={(e) => {
               e.preventDefault();

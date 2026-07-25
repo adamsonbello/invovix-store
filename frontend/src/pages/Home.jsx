@@ -2,11 +2,12 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Marquee from "react-fast-marquee";
-import { ArrowUpRight, ArrowRight, ShieldCheck, Truck, Headphones, RefreshCw } from "lucide-react";
+import { ArrowUpRight, ArrowRight, ShieldCheck, Truck, Headphones, RefreshCw, Star } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import SEO from "@/components/SEO";
+import { Stars } from "@/components/StarRating";
 
 const ease = [0.22, 1, 0.36, 1];
 
@@ -286,9 +287,99 @@ export default function Home() {
       <MarqueeBar />
       <Featured />
       <Categories />
+      <SocialProof />
       <Manifesto />
+      <RecentJournal />
       <Trust />
       <CtaBand />
     </div>
+  );
+}
+
+function SocialProof() {
+  const { t, lang } = useI18n();
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    api.get("/reviews/featured?limit=6").then((r) => setItems(r.data.items)).catch(() => {});
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <section className="bg-surface py-20 md:py-28" data-testid="home-social-proof">
+      <div className="max-w-[1600px] mx-auto px-5 md:px-10">
+        <p className="text-xs tracking-[0.2em] uppercase font-bold text-brand mb-3">{t.home.socialTitle}</p>
+        <h2 className="font-display font-black uppercase tracking-tighter text-4xl md:text-6xl max-w-2xl">{t.home.socialSub}</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-12">
+          {items.map((r, i) => {
+            const pt = r.product ? (lang === "en" ? r.product.title_en || r.product.title : r.product.title) : "";
+            return (
+              <motion.div
+                key={r.id}
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: (i % 3) * 0.08 }}
+                className="bg-cream p-7 flex flex-col"
+                data-testid={`review-card-${r.id}`}
+              >
+                <Stars value={r.rating} size={16} />
+                <p className="text-ink/80 mt-4 flex-1 leading-relaxed">“{r.comment}”</p>
+                <div className="flex items-center gap-3 mt-6 pt-5 border-t border-ink/10">
+                  {r.product?.images?.[0] && <img src={r.product.images[0]} alt={pt} className="w-11 h-11 object-cover bg-[#f0efed]" />}
+                  <div>
+                    <p className="font-medium text-sm">{r.user_name}</p>
+                    <p className="text-stone text-xs truncate max-w-[180px]">{pt}</p>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecentJournal() {
+  const { t, lang } = useI18n();
+  const [posts, setPosts] = useState([]);
+  useEffect(() => {
+    api.get("/blog").then((r) => setPosts((r.data.items || []).slice(0, 3))).catch(() => {});
+  }, []);
+  if (posts.length === 0) return null;
+  return (
+    <section className="max-w-[1600px] mx-auto px-5 md:px-10 py-20 md:py-28" data-testid="home-journal">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-12">
+        <div>
+          <p className="text-xs tracking-[0.2em] uppercase font-bold text-brand mb-3">{t.home.journalTitle}</p>
+          <h2 className="font-display font-black uppercase tracking-tighter text-4xl md:text-6xl max-w-xl">{t.home.journalSub}</h2>
+        </div>
+        <Link to="/blog" className="inline-flex items-center gap-2 font-medium hover:text-brand transition-colors" data-testid="home-journal-all">
+          {t.home.journalAll} <ArrowUpRight className="w-4 h-4" />
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-12">
+        {posts.map((p, i) => (
+          <motion.article
+            key={p.id}
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5, delay: i * 0.08 }}
+            data-testid={`home-post-${p.slug}`}
+          >
+            <Link to={`/blog/${p.slug}`} className="group block">
+              <div className="relative aspect-[16/11] overflow-hidden bg-[#f0efed]">
+                {p.cover_image && <img src={p.cover_image} alt={p.title} className="absolute inset-0 w-full h-full object-cover hover-lift group-hover:scale-105" />}
+              </div>
+              <div className="pt-5">
+                {p.tags?.[0] && <span className="text-xs tracking-[0.2em] uppercase font-bold text-brand">{p.tags[0]}</span>}
+                <h3 className="font-display font-bold text-2xl leading-tight tracking-tight mt-2 group-hover:text-brand transition-colors">{p.title}</h3>
+                <p className="text-ink/60 mt-2 line-clamp-2">{p.excerpt}</p>
+              </div>
+            </Link>
+          </motion.article>
+        ))}
+      </div>
+    </section>
   );
 }

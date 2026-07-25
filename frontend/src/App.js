@@ -4,6 +4,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { LanguageProvider } from "@/i18n";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { WishlistProvider } from "@/context/WishlistContext";
 import { Toaster } from "@/components/ui/sonner";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -21,6 +22,8 @@ import Admin from "@/pages/Admin";
 import Contact from "@/pages/Contact";
 import Blog from "@/pages/Blog";
 import BlogPost from "@/pages/BlogPost";
+import FAQ from "@/pages/FAQ";
+import Wishlist from "@/pages/Wishlist";
 
 function App() {
   return (
@@ -29,6 +32,7 @@ function App() {
         <LanguageProvider>
         <AuthProvider>
           <CartProvider>
+            <WishlistProvider>
             <BrowserRouter>
               <Routes>
                 <Route element={<Layout />}>
@@ -44,6 +48,15 @@ function App() {
                   <Route path="/contact" element={<Contact />} />
                   <Route path="/blog" element={<Blog />} />
                   <Route path="/blog/:slug" element={<BlogPost />} />
+                  <Route path="/faq" element={<FAQ />} />
+                  <Route
+                    path="/wishlist"
+                    element={
+                      <ProtectedRoute>
+                        <Wishlist />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route
                     path="/account"
                     element={
@@ -63,6 +76,7 @@ function App() {
                 </Route>
               </Routes>
             </BrowserRouter>
+            </WishlistProvider>
             <Toaster position="bottom-right" />
           </CartProvider>
         </AuthProvider>

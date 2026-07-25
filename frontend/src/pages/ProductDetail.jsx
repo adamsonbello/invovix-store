@@ -1,19 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Minus, Plus, Check, Truck, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Check, Truck, ShieldCheck, Heart } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { toast } from "sonner";
 import SEO from "@/components/SEO";
 import ProductReviews from "@/components/ProductReviews";
+import RelatedProducts from "@/components/RelatedProducts";
 import { Stars } from "@/components/StarRating";
 
 export default function ProductDetail() {
   const { id } = useParams();
   const { t, lang } = useI18n();
   const { add } = useCart();
+  const { user } = useAuth();
+  const { has, toggle } = useWishlist();
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState(1);
@@ -27,6 +32,17 @@ export default function ProductDetail() {
   const title = lang === "en" ? product.title_en || product.title : product.title;
   const desc = lang === "en" ? product.description_en || product.description : product.description;
   const hasCompare = product.compare_at_price > product.price;
+  const wished = has(product.id);
+
+  const onWish = async () => {
+    if (!user) {
+      toast.error(t.wishlist.loginFirst);
+      navigate("/login");
+      return;
+    }
+    const added = await toggle(product.id);
+    toast.success(added ? t.wishlist.added : t.wishlist.removed);
+  };
 
   const buyNow = () => {
     add(product, qty);
@@ -120,6 +136,16 @@ export default function ProductDetail() {
               >
                 {t.product.add}
               </button>
+              <button
+                onClick={onWish}
+                className={`w-14 h-14 shrink-0 rounded-full border flex items-center justify-center transition-colors ${
+                  wished ? "bg-brand text-white border-brand" : "border-ink/20 hover:border-ink"
+                }`}
+                data-testid="pd-wishlist-toggle"
+                aria-label="toggle wishlist"
+              >
+                <Heart className="w-5 h-5" fill={wished ? "currentColor" : "none"} />
+              </button>
             </div>
             <button
               onClick={buyNow}
@@ -141,6 +167,7 @@ export default function ProductDetail() {
         </div>
 
         <ProductReviews productId={product.id} />
+        <RelatedProducts productId={product.id} />
       </div>
     </div>
   );

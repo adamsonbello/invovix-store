@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -46,6 +46,8 @@ export default function Admin() {
             { key: "cj", label: t.admin.tabCj },
             { key: "blog", label: t.admin.tabBlog },
             { key: "messages", label: t.admin.tabMessages },
+            { key: "promos", label: t.admin.tabPromos },
+            { key: "settings", label: t.admin.tabSettings },
           ].map((tb) => (
             <button
               key={tb.key}
@@ -63,6 +65,8 @@ export default function Admin() {
         {tab === "cj" && <CjTab onImport={loadStats} />}
         {tab === "blog" && <BlogTab />}
         {tab === "messages" && <MessagesTab />}
+        {tab === "promos" && <PromosTab />}
+        {tab === "settings" && <SettingsTab />}
       </div>
     </div>
   );
@@ -474,6 +478,161 @@ function MessagesTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const EMPTY_PROMO = { code: "", type: "percent", value: "", min_subtotal: "0", active: true };
+
+function PromosTab() {
+  const { t } = useI18n();
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState(EMPTY_PROMO);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => api.get("/admin/promos").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.code.trim() || !form.value) return toast.error(t.admin.promoCode);
+    setSaving(true);
+    try {
+      await api.post("/admin/promos", {
+        code: form.code,
+        type: form.type,
+        value: Number(form.value),
+        min_subtotal: Number(form.min_subtotal) || 0,
+        active: form.active,
+      });
+      toast.success("OK");
+      setForm(EMPTY_PROMO);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (code) => {
+    if (!window.confirm(`${t.admin.delete} ${code} ?`)) return;
+    await api.delete(`/admin/promos/${code}`);
+    toast.success("OK");
+    load();
+  };
+
+  return (
+    <div data-testid="admin-promos-tab">
+      <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end bg-surface p-6 mb-8">
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.promoCode}</label>
+          <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink uppercase" data-testid="promo-code-input" />
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.promoType}</label>
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="promo-type-input">
+            <option value="percent">{t.admin.percent}</option>
+            <option value="fixed">{t.admin.fixed}</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.promoValue}</label>
+          <input type="number" step="any" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="promo-value-input" />
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.promoMin}</label>
+          <input type="number" step="any" value={form.min_subtotal} onChange={(e) => setForm({ ...form, min_subtotal: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="promo-min-input" />
+        </div>
+        <button type="submit" disabled={saving} className="inline-flex items-center justify-center gap-2 bg-brand text-white px-5 py-2.5 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="promo-add-btn">
+          <Plus className="w-4 h-4" /> {t.admin.addPromo}
+        </button>
+      </form>
+
+      {items.length === 0 ? (
+        <p className="text-stone py-12 text-center" data-testid="admin-promos-empty">{t.admin.noPromos}</p>
+      ) : (
+        <div className="border border-ink/10 divide-y divide-ink/10">
+          {items.map((p) => (
+            <div key={p.code} className="flex items-center gap-4 p-4" data-testid={`promo-row-${p.code}`}>
+              <Tag className="w-4 h-4 text-brand shrink-0" />
+              <span className="font-display font-bold tracking-wide">{p.code}</span>
+              <span className="text-sm text-stone">
+                {p.type === "percent" ? `−${p.value}%` : `−${p.value}€`}
+                {p.min_subtotal > 0 ? ` · min ${p.min_subtotal}€` : ""}
+              </span>
+              <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full ml-auto ${p.active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                {p.active ? t.admin.promoActive : "—"}
+              </span>
+              <button onClick={() => remove(p.code)} className="text-stone hover:text-red-500 transition-colors" data-testid={`promo-delete-${p.code}`}>
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsTab() {
+  const { t } = useI18n();
+  const [s, setS] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { api.get("/settings").then((r) => setS(r.data)).catch(() => {}); }, []);
+
+  if (!s) return <p className="text-stone py-12 text-center">{t.common.loading}</p>;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put("/admin/settings", {
+        banner_enabled: s.banner_enabled,
+        banner_text: s.banner_text,
+        banner_text_en: s.banner_text_en,
+        whatsapp_number: s.whatsapp_number,
+        whatsapp_enabled: s.whatsapp_enabled,
+      });
+      toast.success(t.admin.settingsSaved);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl space-y-8" data-testid="admin-settings-tab">
+      <div className="border border-ink/10 p-6 space-y-4">
+        <label className="flex items-center gap-3 font-medium">
+          <input type="checkbox" checked={s.banner_enabled} onChange={(e) => setS({ ...s, banner_enabled: e.target.checked })} className="accent-brand w-4 h-4" data-testid="settings-banner-enabled" />
+          {t.admin.bannerEnabled}
+        </label>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.bannerText}</label>
+          <input value={s.banner_text} onChange={(e) => setS({ ...s, banner_text: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-banner-text" />
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.bannerTextEn}</label>
+          <input value={s.banner_text_en} onChange={(e) => setS({ ...s, banner_text_en: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-banner-text-en" />
+        </div>
+      </div>
+
+      <div className="border border-ink/10 p-6 space-y-4">
+        <label className="flex items-center gap-3 font-medium">
+          <input type="checkbox" checked={s.whatsapp_enabled} onChange={(e) => setS({ ...s, whatsapp_enabled: e.target.checked })} className="accent-brand w-4 h-4" data-testid="settings-whatsapp-enabled" />
+          {t.admin.whatsappEnabled}
+        </label>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.whatsappNumber}</label>
+          <input value={s.whatsapp_number} onChange={(e) => setS({ ...s, whatsapp_number: e.target.value })} placeholder="33612345678" className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-whatsapp-number" />
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 bg-brand text-white px-8 py-3.5 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="settings-save-btn">
+        <Settings className="w-4 h-4" /> {saving ? t.common.loading : t.admin.saveSettings}
+      </button>
     </div>
   );
 }

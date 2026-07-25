@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingBag, Menu, X, User, LayoutDashboard } from "lucide-react";
+import { ShoppingBag, Menu, X, User, LayoutDashboard, Search, Heart } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
+import SearchModal from "@/components/SearchModal";
 
-export default function Header() {
+export default function Header({ hasBanner = false }) {
   const { t, lang, toggle } = useI18n();
   const { user, logout } = useAuth();
   const { count } = useCart();
+  const { count: wishCount } = useWishlist();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -30,10 +34,12 @@ export default function Header() {
   ];
 
   return (
+    <>
     <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-[background,box-shadow] duration-500 ${
+      className={`fixed left-0 right-0 z-50 transition-[background,box-shadow] duration-500 ${
         scrolled ? "glass" : "bg-transparent"
       }`}
+      style={{ top: hasBanner ? 36 : 0 }}
       data-testid="site-header"
     >
       <div className="max-w-[1600px] mx-auto px-5 md:px-10 h-16 md:h-20 flex items-center justify-between">
@@ -65,6 +71,21 @@ export default function Header() {
           >
             {lang === "fr" ? "FR" : "EN"}
           </button>
+
+          <button onClick={() => setSearchOpen(true)} className="hover:text-brand transition-colors" data-testid="search-open" aria-label="search">
+            <Search className="w-5 h-5" />
+          </button>
+
+          {user && (
+            <Link to="/wishlist" className="relative hidden md:block hover:text-brand transition-colors" data-testid="nav-wishlist" title={t.wishlist.title}>
+              <Heart className="w-5 h-5" />
+              {wishCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-brand text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1" data-testid="wishlist-count">
+                  {wishCount}
+                </span>
+              )}
+            </Link>
+          )}
 
           {user ? (
             <div className="hidden md:flex items-center gap-4">
@@ -150,6 +171,7 @@ export default function Header() {
                     <Link to="/admin" onClick={() => setOpen(false)} className="text-xl font-medium">{t.nav.admin}</Link>
                   )}
                   <Link to="/account" onClick={() => setOpen(false)} className="text-xl font-medium">{t.nav.account}</Link>
+                  <Link to="/wishlist" onClick={() => setOpen(false)} className="text-xl font-medium">{t.wishlist.title}</Link>
                   <button onClick={() => { logout(); setOpen(false); navigate("/"); }} className="text-xl font-medium text-left text-brand">{t.nav.logout}</button>
                 </>
               ) : (
@@ -160,5 +182,7 @@ export default function Header() {
         )}
       </AnimatePresence>
     </header>
+    <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+    </>
   );
 }

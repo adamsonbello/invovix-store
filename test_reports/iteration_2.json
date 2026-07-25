@@ -1,0 +1,41 @@
+{
+  "summary": "Comprehensive end-to-end test of the conversion/retention feature batch (promo banner, home journal + social proof, instant search, wishlist, related products, promo codes, FAQ, newsletter popup, contact soft-recaptcha, admin promos + settings, WhatsApp button) plus backend regression. 16/16 new backend pytest checks pass and every UI feature from the review request is functional on the preview domain.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Cart summary (right column)",
+        "issues": [
+          "The 'Réduction' line label uses text-brand (orange) for the whole row including amount which reads fine on cream but consider slightly stronger contrast for the amount for a11y."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_extras.py",
+    "/app/backend/tests/test_blog_contact.py",
+    "/app/test_reports/pytest/iteration_2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "extras.py `related_products` returns 200 with empty items for an unknown product id (silent). Consider 404 for a clearly missing id so the frontend can hide the whole section instead of rendering an empty carousel.",
+    "extras.py `PromoInput` accepts type as an arbitrary string; add a Literal['percent','fixed'] validator to reject typos at API boundary.",
+    "Admin.jsx has grown to ~640 lines and now holds 7 tab components (Products, Orders, Cj, Blog, Messages, Promos, Settings). Same recommendation as iteration_1: extract PromosTab, SettingsTab, BlogTab, MessagesTab into /pages/admin/*.jsx modules.",
+    "NewsletterPopup uses a fixed 12s timeout with no interaction-based trigger (scroll/exit-intent); acceptable for MVP but consider exit-intent for higher conversion.",
+    "Layout.jsx fetches /settings on every mount with no cache; low volume so fine, but a shared context or SWR-like cache would avoid duplicate calls when navigating.",
+    "Header.jsx has a leftover typo `w-4.5 h-4.5` in the cart-count className (invalid Tailwind class, harmless because of the explicit min-w/h utilities that follow, but should be cleaned up)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_extras.py (new)",
+    "/app/test_reports/pytest/iteration_2.xml (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@invovix.store / Invovix2026! and client@invovix.store / Client2026! both working. Customer was auto-created via /register during this run (was not previously registered).",
+  "seed_data_creation": "Created customer account client@invovix.store (per test_credentials.md instructions). Created one order via POST /api/orders with WELCOME10 promo applied (subtotal 34.90€, discount 3.49€, shipping 4.90€, total 36.31€ – math verified). One extra order in db.orders left over. Admin settings updated banner_text to 'Livraison offerte dès 50€ · Paiement 100% sécurisé' (restored default) and banner_text_en to 'TEST banner EN' during Settings CRUD test then restored via UI; WhatsApp toggled ON->OFF at end of test. WELCOME10 seed promo is present in db.promos.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suites: `pytest /app/backend/tests/ -v` runs test_blog_contact.py (12 tests) + test_extras.py (16 tests) = 28 tests, all currently green. The UI e2e coverage is in this iteration only (no persisted playwright script). Key gotchas: (1) Newsletter popup requires 12s wait or localStorage.removeItem('invovix_popup_seen') + reload; (2) Promo banner state is sessionStorage-based (invovix_banner_closed) – clear it to re-test; (3) Admin settings-banner-text-en is set to 'TEST banner EN' after this run – if a design reviewer wants the real EN copy back, edit via /admin > Réglages; (4) WELCOME10 discount = 10% of subtotal, applied after shipping calculation (total = subtotal + shipping - discount). Backend uses REACT_APP_BACKEND_URL env var; the test file falls back to reading /app/frontend/.env so pytest works from any shell.",
+  "rca of the issue": "No blocking issues found. During UI testing an initial 'WELCOME10 row present: False' log line appeared because the assertion ran before the PromosTab GET /admin/promos response returned; a later re-query in the same test confirmed the row and a direct API call (curl /api/admin/promos) confirmed WELCOME10 is seeded and active. Not a bug – just a test-script race."
+}

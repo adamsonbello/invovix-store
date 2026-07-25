@@ -3,16 +3,19 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
+import { executeRecaptcha } from "@/lib/recaptcha";
 import { toast } from "sonner";
 
 export default function Footer() {
   const { t } = useI18n();
   const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState("");
   const subscribe = async (e) => {
     e.preventDefault();
     if (!email) return;
     try {
-      await api.post("/newsletter", { email });
+      const token = await executeRecaptcha("newsletter");
+      await api.post("/newsletter", { email, website, recaptcha_token: token });
       toast.success(t.newsletterOk);
       setEmail("");
     } catch (err) {
@@ -43,6 +46,7 @@ export default function Footer() {
             <p className="text-xs tracking-[0.2em] uppercase text-brand font-bold mb-6">{t.footer.newsletter}</p>
             <p className="text-white/60 mb-4">{t.footer.newsletterD}</p>
             <form className="flex border-b border-white/30 pb-2" onSubmit={subscribe}>
+              <input type="text" value={website} onChange={(e) => setWebsite(e.target.value)} className="hidden" tabIndex={-1} autoComplete="off" aria-hidden="true" />
               <input
                 type="email"
                 value={email}
@@ -61,8 +65,9 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pt-8 text-sm text-white/40">
           <p>© {new Date().getFullYear()} Invovix · invovix.store · {t.footer.rights}</p>
           <div className="flex gap-6">
+            <Link to="/faq" className="hover:text-white transition-colors">{t.footer.faq}</Link>
+            <Link to="/contact" className="hover:text-white transition-colors">{t.footer.contact}</Link>
             <span className="hover:text-white transition-colors cursor-pointer">{t.footer.legal}</span>
-            <span className="hover:text-white transition-colors cursor-pointer">{t.footer.contact}</span>
           </div>
         </div>
       </div>

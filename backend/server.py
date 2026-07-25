@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import uuid
 import asyncio
 import logging
@@ -20,12 +21,55 @@ from security import (
 import cj as cjmod
 import brevo as brevomod
 from payments import payments_router
+from extras import extras_router, validate_promo, seed_extras
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
 
 app = FastAPI(title="Invovix API")
 api = APIRouter(prefix="/api")
+
+
+# ----------------------------- Anti-spam: rate limit + reCAPTCHA -----------------------------
+_rate_store: dict = {}
+RECAPTCHA_SECRET = os.environ.get("RECAPTCHA_SECRET_KEY", "")
+RECAPTCHA_MIN_SCORE = float(os.environ.get("RECAPTCHA_MIN_SCORE", "0.5"))
+
+
+def rate_limit(ip: str, key: str, max_calls: int, window_sec: int):
+    now = time.time()
+    k = f"{key}:{ip}"
+    calls = [t for t in _rate_store.get(k, []) if now - t < window_sec]
+    if len(calls) >= max_calls:
+        raise HTTPException(429, "Trop de tentatives. Réessayez plus tard.")
+    calls.append(now)
+    _rate_store[k] = calls
+
+
+async def verify_recaptcha(token: str, expected_action: str, remote_ip: str = None):
+    """Score-based check. Soft-fails (allows) when reCAPTCHA is not usable
+    (no token / domain not yet whitelisted / network error) so forms keep
+    working everywhere; honeypot + rate-limit remain the baseline protection.
+    Enforces the score only when Google returns a successful verification."""
+    if not RECAPTCHA_SECRET:
+        return
+    if not token:
+        return  # domain likely not configured (e.g. preview) -> rely on honeypot + rate limit
+    data = {"secret": RECAPTCHA_SECRET, "response": token}
+    if remote_ip:
+        data["remoteip"] = remote_ip
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post("https://www.google.com/recaptcha/api/siteverify", data=data)
+        payload = r.json()
+    except Exception:
+        return  # network issue -> do not block legitimate users
+    if not payload.get("success"):
+        return  # hostname-mismatch / expired etc. -> soft allow
+    if payload.get("action") and payload.get("action") != expected_action:
+        raise HTTPException(403, "Action anti-robot invalide.")
+    if float(payload.get("score", 1)) < RECAPTCHA_MIN_SCORE:
+        raise HTTPException(403, "Activité suspecte détectée.")
 
 
 # ----------------------------- Models -----------------------------
@@ -73,6 +117,7 @@ class ShippingAddress(BaseModel):
 class OrderInput(BaseModel):
     items: List[CartItem]
     shipping_address: ShippingAddress
+    promo_code: Optional[str] = ""
 
 
 class ReviewInput(BaseModel):
@@ -83,6 +128,8 @@ class ReviewInput(BaseModel):
 
 class NewsletterInput(BaseModel):
     email: EmailStr
+    website: str = ""  # honeypot
+    recaptcha_token: str = ""
 
 
 class BulkImportInput(BaseModel):
@@ -96,6 +143,8 @@ class ContactInput(BaseModel):
     email: EmailStr
     subject: str = ""
     message: str
+    website: str = ""  # honeypot
+    recaptcha_token: str = ""
 
 
 class BlogInput(BaseModel):
@@ -266,7 +315,12 @@ async def create_review(product_id: str, body: ReviewInput, user: dict = Depends
 
 
 @api.post("/newsletter")
-async def subscribe_newsletter(body: NewsletterInput):
+async def subscribe_newsletter(body: NewsletterInput, request: Request):
+    ip = request.client.host if request.client else "?"
+    rate_limit(ip, "newsletter", 10, 3600)
+    if body.website:  # honeypot -> silently drop bots
+        return {"ok": True}
+    await verify_recaptcha(body.recaptcha_token, "newsletter", ip)
     email = body.email.lower()
     await db.newsletter.update_one(
         {"email": email},
@@ -278,10 +332,16 @@ async def subscribe_newsletter(body: NewsletterInput):
 
 # ----------------------------- Contact -----------------------------
 @api.post("/contact")
-async def contact(body: ContactInput, background_tasks: BackgroundTasks):
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": datetime.now(timezone.utc).isoformat(), "read": False}
+async def contact(body: ContactInput, request: Request, background_tasks: BackgroundTasks):
+    ip = request.client.host if request.client else "?"
+    rate_limit(ip, "contact", 5, 3600)
+    if body.website:  # honeypot -> silently drop bots
+        return {"ok": True}
+    await verify_recaptcha(body.recaptcha_token, "contact", ip)
+    clean = {"name": body.name, "email": body.email, "subject": body.subject, "message": body.message}
+    doc = {"id": str(uuid.uuid4()), **clean, "created_at": datetime.now(timezone.utc).isoformat(), "read": False}
     await db.contacts.insert_one(doc)
-    background_tasks.add_task(brevomod.send_contact_notification, os.environ.get("ADMIN_EMAIL", ""), body.model_dump())
+    background_tasks.add_task(brevomod.send_contact_notification, os.environ.get("ADMIN_EMAIL", ""), clean)
     return {"ok": True}
 
 
@@ -377,13 +437,17 @@ async def delete_blog(post_id: str, admin: dict = Depends(require_admin)):
 async def sitemap():
     base = os.environ.get("FRONTEND_URL", "").rstrip("/")
     products = await db.products.find({"active": True}, {"_id": 0, "id": 1}).to_list(2000)
-    static_paths = ["/", "/shop", "/shop?category=smart-home", "/shop?category=workspace", "/shop?category=security"]
+    posts = await db.blog_posts.find({"published": True}, {"_id": 0, "slug": 1}).to_list(500)
+    static_paths = ["/", "/shop", "/shop?category=smart-home", "/shop?category=workspace",
+                    "/shop?category=security", "/blog", "/contact", "/faq"]
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for p in static_paths:
         loc = f"{base}{p}".replace("&", "&amp;")
         lines.append(f"  <url><loc>{loc}</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>")
     for prod in products:
         lines.append(f"  <url><loc>{base}/product/{prod['id']}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>")
+    for post in posts:
+        lines.append(f"  <url><loc>{base}/blog/{post['slug']}</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>")
     lines.append("</urlset>")
     return Response(content="\n".join(lines), media_type="application/xml")
 
@@ -426,7 +490,14 @@ async def _build_order(body: OrderInput, user: dict) -> dict:
         })
     subtotal = round(subtotal, 2)
     shipping = 0.0 if subtotal >= 50 else 4.90
-    total = round(subtotal + shipping, 2)
+    discount = 0.0
+    promo_code = None
+    if getattr(body, "promo_code", ""):
+        promo = await validate_promo(body.promo_code, subtotal)
+        if promo:
+            discount = promo["discount"]
+            promo_code = promo["code"]
+    total = round(subtotal + shipping - discount, 2)
     return {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
@@ -434,6 +505,8 @@ async def _build_order(body: OrderInput, user: dict) -> dict:
         "items": line_items,
         "subtotal": subtotal,
         "shipping": shipping,
+        "discount": discount,
+        "promo_code": promo_code,
         "total": total,
         "currency": "EUR",
         "status": "pending",
@@ -632,6 +705,7 @@ async def root():
 
 app.include_router(api)
 app.include_router(payments_router)
+app.include_router(extras_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -743,6 +817,7 @@ async def startup():
     await db.orders.create_index("id")
     await seed_admin()
     await seed_products()
+    await seed_extras()
 
 
 @app.on_event("shutdown")
