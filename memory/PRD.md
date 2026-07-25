@@ -28,6 +28,13 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 - **Marketing** : capture newsletter (persistée en base). VÉRIFIÉ.
 - **Email post-livraison via Brevo** (REST API v3, xkeysib) : envoyé automatiquement quand une commande passe en "delivered" (invitation à laisser un avis produit+transport, bilingue). VÉRIFIÉ (HTTP 201 + log "email sent"). Restriction IP Brevo désactivée par le client.
 
+## Implemented (2026-06 — session Blog/Contact)
+- **Page Contact** (/contact) liée dans la navbar (FR "Contact"), formulaire → POST /api/contact (persisté en base + notification Brevo à l'admin en BackgroundTask). VÉRIFIÉ.
+- **Système Blog** : page liste /blog + page article /blog/:slug (SEO + JSON-LD BlogPosting). 3 articles de démo seedés (domotique / télétravail / sécurité). VÉRIFIÉ.
+- **Éditeur Blog admin** (onglet "Blog" dans /admin) : éditeur riche react-quill-new avec upload d'images (POST /api/admin/upload → stockage same-origin /public/blog/), CRUD complet (create/edit/delete). VÉRIFIÉ (backend 14/14 pytest + UI screenshot).
+- **Onglet Messages admin** : liste des messages du formulaire de contact (GET /api/admin/contacts). VÉRIFIÉ.
+- **Bouton Connexion navbar** : bouton pill visible pointant vers /login (qui contient le lien inscription) quand déconnecté. VÉRIFIÉ.
+
 ## Pending / Requires user action
 - PayPal **Live** : nécessite un compte Business (les clés actuelles sont Sandbox/test).
 - Brevo : vérifier l'expéditeur contact@invovix.store + authentifier le domaine (DKIM/DMARC) pour la délivrabilité.

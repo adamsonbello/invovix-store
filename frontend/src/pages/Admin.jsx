@@ -61,6 +61,8 @@ export default function Admin() {
         {tab === "products" && <ProductsTab onChange={loadStats} />}
         {tab === "orders" && <OrdersTab />}
         {tab === "cj" && <CjTab onImport={loadStats} />}
+        {tab === "blog" && <BlogTab />}
+        {tab === "messages" && <MessagesTab />}
       </div>
     </div>
   );
@@ -389,8 +391,8 @@ function BlogTab() {
     setEditing(r.data);
   };
 
-  const remove = async (id) => {
-    if (!window.confirm("?")) return;
+  const remove = async (id, title) => {
+    if (!window.confirm(`${t.admin.delete} : ${title} ?`)) return;
     await api.delete(`/admin/blog/${id}`);
     toast.success("OK");
     load();
@@ -425,7 +427,7 @@ function BlogTab() {
               <button onClick={() => openEdit(p.id)} className="text-stone hover:text-brand transition-colors" data-testid={`blog-edit-${p.slug}`}>
                 <Edit className="w-4 h-4" />
               </button>
-              <button onClick={() => remove(p.id)} className="text-stone hover:text-red-500 transition-colors" data-testid={`blog-delete-${p.slug}`}>
+              <button onClick={() => remove(p.id, p.title)} className="text-stone hover:text-red-500 transition-colors" data-testid={`blog-delete-${p.slug}`}>
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
