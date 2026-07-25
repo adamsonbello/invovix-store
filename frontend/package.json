@@ -53,6 +53,7 @@
     "react-fast-marquee": "^1.6.5",
     "react-helmet-async": "^3.0.0",
     "react-hook-form": "7.56.2",
+    "react-quill-new": "^3.8.3",
     "react-resizable-panels": "3.0.1",
     "react-router-dom": "7.15.0",
     "react-scripts": "5.0.1",

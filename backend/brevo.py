@@ -56,7 +56,7 @@ def _build_content(to_name: str, order: dict, frontend_url: str):
     return subject, html, text
 
 
-def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: str) -> bool:
+def _send_email(to_email: str, to_name: str, subject: str, html: str, text: str) -> bool:
     if not to_email:
         logger.warning("Brevo: no recipient email; skipping")
         return False
@@ -66,9 +66,7 @@ def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: 
 
     sender_email = os.environ.get("BREVO_SENDER_EMAIL", "contact@invovix.store")
     sender_name = os.environ.get("BREVO_SENDER_NAME", "Invovix")
-    subject, html, text = _build_content(to_name, order, frontend_url)
 
-    # Preferred: REST API v3 (requires xkeysib key)
     if _rest_key():
         try:
             r = httpx.post(
@@ -90,7 +88,6 @@ def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: 
             logger.error(f"Brevo REST send failed: {e}")
             return False
 
-    # Fallback: SMTP relay (requires xsmtpsib key + SMTP login)
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -107,3 +104,24 @@ def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: 
     except Exception as e:
         logger.error(f"Brevo SMTP send failed: {e}")
         return False
+
+
+def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: str) -> bool:
+    subject, html, text = _build_content(to_name, order, frontend_url)
+    return _send_email(to_email, to_name, subject, html, text)
+
+
+def send_contact_notification(admin_email: str, data: dict) -> bool:
+    subject = f"Nouveau message de contact — {data.get('name','')}"
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#0a0a0a">
+      <h2 style="text-transform:uppercase;letter-spacing:-0.5px">Nouveau message · Invovix</h2>
+      <p><strong>Nom :</strong> {data.get('name','')}</p>
+      <p><strong>Email :</strong> {data.get('email','')}</p>
+      <p><strong>Sujet :</strong> {data.get('subject','')}</p>
+      <p><strong>Message :</strong></p>
+      <p style="background:#f5f5f5;padding:16px;border-left:3px solid #ff3300">{data.get('message','')}</p>
+    </div>
+    """
+    text = f"Contact de {data.get('name','')} <{data.get('email','')}> — {data.get('subject','')}: {data.get('message','')}"
+    return _send_email(admin_email, "Invovix Admin", subject, html, text)

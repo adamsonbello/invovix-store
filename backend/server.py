@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import asyncio
 import logging
@@ -7,7 +8,7 @@ from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Response, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Response, BackgroundTasks, UploadFile, File
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 
@@ -88,6 +89,22 @@ class BulkImportInput(BaseModel):
     pids: List[str]
     margin: float = 60
     category: str = "smart-home"
+
+
+class ContactInput(BaseModel):
+    name: str
+    email: EmailStr
+    subject: str = ""
+    message: str
+
+
+class BlogInput(BaseModel):
+    title: str
+    excerpt: str = ""
+    content: str = ""
+    cover_image: str = ""
+    tags: List[str] = []
+    published: bool = True
 
 
 # ----------------------------- Auth -----------------------------
@@ -256,6 +273,103 @@ async def subscribe_newsletter(body: NewsletterInput):
         {"$setOnInsert": {"email": email, "created_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
+    return {"ok": True}
+
+
+# ----------------------------- Contact -----------------------------
+@api.post("/contact")
+async def contact(body: ContactInput, background_tasks: BackgroundTasks):
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": datetime.now(timezone.utc).isoformat(), "read": False}
+    await db.contacts.insert_one(doc)
+    background_tasks.add_task(brevomod.send_contact_notification, os.environ.get("ADMIN_EMAIL", ""), body.model_dump())
+    return {"ok": True}
+
+
+@api.get("/admin/contacts")
+async def list_contacts(admin: dict = Depends(require_admin)):
+    items = await db.contacts.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items}
+
+
+# ----------------------------- Blog -----------------------------
+def _slugify(title: str) -> str:
+    s = re.sub(r"[^\w\s-]", "", title.lower()).strip()
+    s = re.sub(r"[\s_-]+", "-", s)
+    return s[:80] or uuid.uuid4().hex[:8]
+
+
+BLOG_DIR = "/app/frontend/public/blog"
+
+
+@api.post("/admin/upload")
+async def upload_image(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    os.makedirs(BLOG_DIR, exist_ok=True)
+    ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "png").lower()
+    if ext not in ["png", "jpg", "jpeg", "webp", "gif"]:
+        ext = "png"
+    fname = f"{uuid.uuid4().hex}.{ext}"
+    content = await file.read()
+    with open(os.path.join(BLOG_DIR, fname), "wb") as f:
+        f.write(content)
+    return {"url": f"/blog/{fname}"}
+
+
+@api.get("/blog")
+async def list_blog(tag: Optional[str] = None):
+    q = {"published": True}
+    if tag:
+        q["tags"] = tag
+    items = await db.blog_posts.find(q, {"_id": 0, "content": 0}).sort("created_at", -1).to_list(200)
+    return {"items": items}
+
+
+@api.get("/blog/{slug}")
+async def get_blog(slug: str):
+    p = await db.blog_posts.find_one({"slug": slug, "published": True}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Article introuvable")
+    return p
+
+
+@api.get("/admin/blog")
+async def admin_list_blog(admin: dict = Depends(require_admin)):
+    items = await db.blog_posts.find({}, {"_id": 0, "content": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items}
+
+
+@api.get("/admin/blog/{post_id}")
+async def admin_get_blog(post_id: str, admin: dict = Depends(require_admin)):
+    p = await db.blog_posts.find_one({"id": post_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Article introuvable")
+    return p
+
+
+@api.post("/admin/blog")
+async def create_blog(body: BlogInput, admin: dict = Depends(require_admin)):
+    slug = _slugify(body.title)
+    if await db.blog_posts.find_one({"slug": slug}):
+        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {"id": str(uuid.uuid4()), "slug": slug, **body.model_dump(), "author": admin["name"], "created_at": now, "updated_at": now}
+    await db.blog_posts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.put("/admin/blog/{post_id}")
+async def update_blog(post_id: str, body: BlogInput, admin: dict = Depends(require_admin)):
+    update = body.model_dump()
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.blog_posts.update_one({"id": post_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Article introuvable")
+    return await db.blog_posts.find_one({"id": post_id}, {"_id": 0})
+
+
+@api.delete("/admin/blog/{post_id}")
+async def delete_blog(post_id: str, admin: dict = Depends(require_admin)):
+    await db.blog_posts.delete_one({"id": post_id})
     return {"ok": True}
 
 
