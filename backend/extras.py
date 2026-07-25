@@ -1,10 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
 from database import db
 from security import get_current_user, require_admin
 
@@ -112,7 +111,7 @@ async def toggle_wishlist(product_id: str, user: dict = Depends(get_current_user
 # ----------------------------- Promo codes -----------------------------
 class PromoInput(BaseModel):
     code: str
-    type: str = "percent"  # percent | fixed
+    type: Literal["percent", "fixed"] = "percent"
     value: float
     min_subtotal: float = 0
     active: bool = True

@@ -119,7 +119,7 @@ export default function Header({ hasBanner = false }) {
             <ShoppingBag className="w-5 h-5 md:w-6 md:h-6" />
             {count > 0 && (
               <span
-                className="absolute -top-2 -right-2 bg-brand text-white text-[10px] font-bold w-4.5 h-4.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1"
+                className="absolute -top-2 -right-2 bg-brand text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1"
                 data-testid="cart-count"
               >
                 {count}

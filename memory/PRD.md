@@ -35,7 +35,22 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 - **Onglet Messages admin** : liste des messages du formulaire de contact (GET /api/admin/contacts). VÉRIFIÉ.
 - **Bouton Connexion navbar** : bouton pill visible pointant vers /login (qui contient le lien inscription) quand déconnecté. VÉRIFIÉ.
 
+## Implemented (2026-06 — session Conversion/Rétention & Sécurité)
+- **Bandeau promo** en haut du site (configurable admin, dismissable) + **bouton WhatsApp** flottant (configurable admin) + **onglet Réglages** admin (GET /api/settings, PUT /api/admin/settings). VÉRIFIÉ.
+- **Bloc "Le Journal"** (3 derniers articles) + **bloc Avis clients** (GET /api/reviews/featured) sur la page d'accueil. VÉRIFIÉ.
+- **Recherche instantanée** (modal navbar, debounce sur GET /api/products?q=). VÉRIFIÉ.
+- **Wishlist / Favoris** (WishlistContext, cœur sur ProductCard + ProductDetail, page /wishlist, compteur navbar ; endpoints GET/POST /api/wishlist auth). VÉRIFIÉ.
+- **"Vous aimerez aussi"** sur la page produit (GET /api/products/:id/related). VÉRIFIÉ.
+- **Codes promo** : validation panier + checkout (POST /api/promo/validate), discount appliqué à la commande (_build_order), CRUD admin (/api/admin/promos). Code **WELCOME10** (-10%) seedé. VÉRIFIÉ (math : subtotal - 10% + shipping).
+- **Pop-up newsletter -10%** (après 12s, 1x/localStorage) affichant le code WELCOME10. VÉRIFIÉ.
+- **Page FAQ** /faq (accordion + livraison/retours + JSON-LD FAQPage). VÉRIFIÉ.
+- **Sécurité formulaires** : honeypot (champ 'website') + rate-limiting IP + **Google reCAPTCHA v3** (soft-fail : la clé est restreinte au domaine invovix.store ; sur preview le token est vide → honeypot+rate-limit assurent la protection ; en production le score reCAPTCHA est appliqué). VÉRIFIÉ (28 tests pytest verts).
+- **Google Tag Manager** (GTM-KZBXP887) intégré dans index.html (head + noscript). 
+- **Sitemap** enrichi : URLs des articles de blog + /faq + /contact. VÉRIFIÉ.
+
 ## Pending / Requires user action
+- **reCAPTCHA v3** : ajouter le domaine de production `invovix.store` **ET** le domaine de preview aux domaines autorisés dans la console Google reCAPTCHA pour activer le scoring anti-bot complet (actuellement soft-fail hors invovix.store).
+- **WhatsApp** : renseigner le numéro international dans /admin > Réglages et activer le bouton.
 - PayPal **Live** : nécessite un compte Business (les clés actuelles sont Sandbox/test).
 - Brevo : vérifier l'expéditeur contact@invovix.store + authentifier le domaine (DKIM/DMARC) pour la délivrabilité.
 - Test e2e navigateur du bouton PayPal avec un compte acheteur Sandbox.
