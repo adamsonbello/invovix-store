@@ -15,6 +15,11 @@ export default function PaymentSuccess() {
   const sessionId = params.get("session_id");
 
   useEffect(() => {
+    if (params.get("paypal")) {
+      setStatus("paid");
+      clear();
+      return;
+    }
     if (!sessionId) {
       setStatus("error");
       return;

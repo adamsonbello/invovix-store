@@ -159,4 +159,9 @@ async def paypal_capture(paypal_order_id: str, user: dict = Depends(get_current_
 
 @payments_router.get("/config")
 async def payments_config():
-    return {"paypal": paypal_configured(), "stripe": True}
+    return {
+        "paypal": paypal_configured(),
+        "stripe": True,
+        "paypal_client_id": os.environ.get("PAYPAL_CLIENT_ID", "") if paypal_configured() else "",
+        "paypal_mode": PAYPAL_MODE,
+    }

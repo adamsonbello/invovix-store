@@ -18,18 +18,20 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 
 ## Implemented (2026-06)
 - Auth complète (register/login/me), JWT, admin seed idempotent.
-- Catalogue produits (filtres catégorie + recherche), page produit, 8 produits seed avec visuels générés (servis en local /public/products).
-- Panier (localStorage), création de commande, calcul livraison (offerte >=50€).
-- Paiement Stripe (Flow B, montant dynamique EUR) — VÉRIFIÉ end-to-end (session créée, redirection checkout).
-- PayPal REST (Orders v2, create+capture) — code prêt, ACTIVÉ dès que clés fournies (désactivé UI si non configuré).
-- CJDropshipping: client API (token/refresh), recherche + import produits dans l'admin — code prêt, s'active dès que CJ_API_KEY fournie.
-- Admin dashboard: stats, CRUD produits, gestion statut commandes, onglet import CJ.
-- Bilingue FR/EN, responsive, animations premium.
+- Catalogue produits (filtres + recherche), page produit, 8 produits seed + visuels générés (servis en /public).
+- Panier, commandes, calcul livraison (offerte >=50€).
+- **Stripe** (Flow B, EUR) sur le **compte du client** (clé sk_test fournie) — VÉRIFIÉ (session + redirection).
+- **PayPal** REST (Orders v2, create+capture) + **boutons PayPal JS SDK** dans le checkout — clés Sandbox du client configurées. Backend VÉRIFIÉ (OAuth + création d'ordre → vrai PayPal order id). Test visuel e2e à faire par le client (limite de l'outil de screenshot sur les pages authentifiées).
+- **CJDropshipping** connecté : recherche + import. Images CJ téléchargées côté serveur vers /public (contournement hotlink), descriptions HTML nettoyées. VÉRIFIÉ.
+- **Avis & ratings** : note produit + note transport/livraison, achat vérifié requis, moyenne agrégée + JSON-LD. VÉRIFIÉ.
+- **SEO** : meta dynamiques + OpenGraph + JSON-LD (Organization/Product), **sitemap.xml dynamique** (/api/sitemap.xml), robots.txt. VÉRIFIÉ.
+- **Marketing** : capture newsletter (persistée en base). VÉRIFIÉ.
+- **Email post-livraison via Brevo** (REST API v3, xkeysib) : envoyé automatiquement quand une commande passe en "delivered" (invitation à laisser un avis produit+transport, bilingue). VÉRIFIÉ (HTTP 201 + log "email sent"). Restriction IP Brevo désactivée par le client.
 
-## Pending / Requires user keys
-- CJ_API_KEY (backend/.env) → active recherche + import CJ.
-- PAYPAL_CLIENT_ID / PAYPAL_SECRET (backend/.env) → active PayPal (bouton actuellement désactivé).
-- PayPal: brancher le SDK JS PayPal Buttons dans Checkout pour l'approbation complète (actuellement create order côté serveur uniquement).
+## Pending / Requires user action
+- PayPal **Live** : nécessite un compte Business (les clés actuelles sont Sandbox/test).
+- Brevo : vérifier l'expéditeur contact@invovix.store + authentifier le domaine (DKIM/DMARC) pour la délivrabilité.
+- Test e2e navigateur du bouton PayPal avec un compte acheteur Sandbox.
 
 ## Backlog
 - P1: Webhook signature PayPal, emails de confirmation (Resend), suivi de livraison.

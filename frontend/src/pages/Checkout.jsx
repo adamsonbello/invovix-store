@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 export default function Checkout() {
   const { t, lang } = useI18n();
@@ -61,17 +62,23 @@ export default function Checkout() {
     }
   };
 
-  const payPaypal = async () => {
-    setProcessing(true);
+  const paypalCreateOrder = async () => {
+    const order = await createOrder();
+    const res = await api.post(`/payments/paypal/create/${order.id}`);
+    return res.data.paypal_order_id;
+  };
+
+  const paypalOnApprove = async (data) => {
     try {
-      const order = await createOrder();
-      const res = await api.post(`/payments/paypal/create/${order.id}`);
-      // A full PayPal JS SDK flow will be wired once live keys are set.
-      toast.success("PayPal order created: " + res.data.paypal_order_id);
-      setProcessing(false);
+      const res = await api.post(`/payments/paypal/capture/${data.orderID}`);
+      if (res.data.paid) {
+        clear();
+        navigate("/payment/success?paypal=1");
+      } else {
+        toast.error(t.payment.failed);
+      }
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
-      setProcessing(false);
     }
   };
 
@@ -83,7 +90,6 @@ export default function Checkout() {
       return;
     }
     if (method === "stripe") payStripe();
-    else payPaypal();
   };
 
   const required = ["full_name", "email", "address", "city", "postal_code", "country"];
