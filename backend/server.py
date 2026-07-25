@@ -1,10 +1,12 @@
 import os
 import uuid
 import logging
+import httpx
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Response, BackgroundTasks
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 
@@ -14,6 +16,7 @@ from security import (
     get_current_user, require_admin,
 )
 import cj as cjmod
+import brevo as brevomod
 from payments import payments_router
 
 logging.basicConfig(level=logging.INFO)
@@ -264,6 +267,24 @@ async def sitemap():
     return Response(content="\n".join(lines), media_type="application/xml")
 
 
+@api.get("/img")
+async def image_proxy(url: str):
+    """Same-origin proxy for external images (e.g. CJDropshipping CDN) to bypass hotlink protection."""
+    if not url.startswith("http"):
+        raise HTTPException(400, "URL invalide")
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
+            r = await c.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+    except Exception:
+        raise HTTPException(502, "Image indisponible")
+    return Response(
+        content=r.content,
+        media_type=r.headers.get("content-type", "image/jpeg"),
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 # ----------------------------- Orders -----------------------------
 async def _build_order(body: OrderInput, user: dict) -> dict:
     line_items = []
@@ -349,11 +370,23 @@ async def admin_orders(admin: dict = Depends(require_admin)):
 
 
 @api.put("/admin/orders/{order_id}/status")
-async def admin_update_order(order_id: str, status: str = Query(...), admin: dict = Depends(require_admin)):
-    res = await db.orders.update_one({"id": order_id}, {"$set": {"status": status}})
-    if res.matched_count == 0:
+async def admin_update_order(order_id: str, background_tasks: BackgroundTasks, status: str = Query(...), admin: dict = Depends(require_admin)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
         raise HTTPException(404, "Commande introuvable")
-    return {"ok": True}
+    await db.orders.update_one({"id": order_id}, {"$set": {"status": status}})
+    email_queued = False
+    if status == "delivered" and not order.get("review_email_sent"):
+        addr = order.get("shipping_address") or {}
+        to_email = addr.get("email") or order.get("user_email")
+        to_name = addr.get("full_name") or "Client"
+        order["status"] = "delivered"
+        background_tasks.add_task(
+            brevomod.send_review_request, to_email, to_name, order, os.environ.get("FRONTEND_URL", "")
+        )
+        await db.orders.update_one({"id": order_id}, {"$set": {"review_email_sent": True}})
+        email_queued = True
+    return {"ok": True, "review_email_queued": email_queued, "brevo_configured": brevomod.brevo_configured()}
 
 
 # ----------------------------- CJ Dropshipping (admin) -----------------------------
@@ -373,6 +406,28 @@ async def cj_search(q: str = "", page: int = 1, admin: dict = Depends(require_ad
         raise HTTPException(502, f"Erreur CJDropshipping: {e}")
 
 
+PUBLIC_PRODUCTS_DIR = "/app/frontend/public/products"
+
+
+async def _localize_images(urls: list, pid: str) -> list:
+    """Download external product images server-side into the frontend /public dir (served same-origin)."""
+    os.makedirs(PUBLIC_PRODUCTS_DIR, exist_ok=True)
+    local = []
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as c:
+        for i, u in enumerate(urls):
+            try:
+                r = await c.get(u, headers={"User-Agent": "Mozilla/5.0"})
+                r.raise_for_status()
+                ext = "png" if "png" in r.headers.get("content-type", "") else "jpg"
+                fname = f"cj_{pid}_{i}.{ext}"
+                with open(os.path.join(PUBLIC_PRODUCTS_DIR, fname), "wb") as f:
+                    f.write(r.content)
+                local.append(f"/products/{fname}")
+            except Exception:
+                continue
+    return local
+
+
 @api.post("/admin/cj/import/{pid}")
 async def cj_import(pid: str, admin: dict = Depends(require_admin)):
     if not cjmod.cj_configured():
@@ -384,6 +439,7 @@ async def cj_import(pid: str, admin: dict = Depends(require_admin)):
     existing = await db.products.find_one({"cj_pid": product["cj_pid"]})
     if existing:
         raise HTTPException(400, "Ce produit est déjà importé")
+    product["images"] = await _localize_images(product.get("images", []), product["id"])
     await db.products.insert_one(product)
     product.pop("_id", None)
     return product

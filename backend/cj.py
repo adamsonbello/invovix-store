@@ -1,6 +1,8 @@
 import os
+import re
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 import httpx
 
 from database import db
@@ -95,19 +97,25 @@ def normalize_cj_product(cj: dict) -> dict:
     images = cj.get("productImageSet") or cj.get("productImage") or []
     if isinstance(images, str):
         images = [images]
+    raw_imgs = [u for u in images[:6] if u]
+
+    raw_desc = cj.get("description") or ""
+    clean_desc = re.sub(r"<[^>]+>", " ", raw_desc)
+    clean_desc = re.sub(r"&[a-zA-Z]+;", " ", clean_desc)
+    clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
 
     return {
         "id": str(uuid.uuid4()),
         "title": cj.get("productNameEn") or cj.get("productName") or "Untitled",
         "title_en": cj.get("productNameEn") or cj.get("productName") or "Untitled",
-        "description": cj.get("description") or "",
-        "description_en": cj.get("description") or "",
+        "description": clean_desc,
+        "description_en": clean_desc,
         "price": round(base_price * 1.6, 2) if base_price else 0.0,
         "cost_price": base_price,
         "compare_at_price": round(base_price * 2.2, 2) if base_price else 0.0,
         "currency": "EUR",
         "category": "smart-home",
-        "images": images[:6],
+        "images": raw_imgs,
         "stock": 100,
         "featured": False,
         "active": True,
