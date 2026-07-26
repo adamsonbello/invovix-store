@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -53,6 +53,7 @@ export default function Admin() {
             { key: "blog", label: t.admin.tabBlog },
             { key: "messages", label: t.admin.tabMessages },
             { key: "promos", label: t.admin.tabPromos },
+            { key: "marketing", label: "Marketing & CRM" },
             { key: "settings", label: t.admin.tabSettings },
           ].map((tb) => (
             <button
@@ -77,6 +78,7 @@ export default function Admin() {
         {tab === "blog" && <BlogTab />}
         {tab === "messages" && <MessagesTab />}
         {tab === "promos" && <PromosTab />}
+        {tab === "marketing" && <MarketingTab />}
         {tab === "settings" && <SettingsTab />}
       </div>
     </div>
@@ -1046,6 +1048,9 @@ function SettingsTab() {
         vat_regime: s.vat_regime,
         vat_rate: Number(s.vat_rate) || 0,
         ad_spend_30d: Number(s.ad_spend_30d) || 0,
+        discord_webhook_url: s.discord_webhook_url || "",
+        slack_webhook_url: s.slack_webhook_url || "",
+        notify_new_order: !!s.notify_new_order,
       });
       toast.success(t.admin.settingsSaved);
     } catch (err) {
@@ -1095,6 +1100,24 @@ function SettingsTab() {
           <input type="number" step="any" value={s.ad_spend_30d ?? 0} onChange={(e) => setS({ ...s, ad_spend_30d: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-ad-spend" />
           <p className="text-stone text-xs mt-1">Utilisé pour calculer le ROAS, le ROI et le bénéfice net dans Analytics.</p>
         </div>
+      </div>
+
+      <div className="border border-ink/10 p-6 space-y-4">
+        <p className="font-display font-bold text-lg">Notifications multi-canal</p>
+        <label className="flex items-center gap-3 font-medium">
+          <input type="checkbox" checked={!!s.notify_new_order} onChange={(e) => setS({ ...s, notify_new_order: e.target.checked })} className="accent-brand w-4 h-4" data-testid="settings-notify-new-order" />
+          M'alerter à chaque nouvelle commande payée
+        </label>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Webhook Discord (URL)</label>
+          <input value={s.discord_webhook_url || ""} onChange={(e) => setS({ ...s, discord_webhook_url: e.target.value })} placeholder="https://discord.com/api/webhooks/..." className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-discord" />
+        </div>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Webhook Slack (URL)</label>
+          <input value={s.slack_webhook_url || ""} onChange={(e) => setS({ ...s, slack_webhook_url: e.target.value })} placeholder="https://hooks.slack.com/services/..." className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-slack" />
+        </div>
+        <button type="button" onClick={async () => { try { await api.post("/admin/notifications/test", { discord_webhook_url: s.discord_webhook_url, slack_webhook_url: s.slack_webhook_url }); toast.success("Notification de test envoyée"); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } }} className="border border-ink/20 px-5 py-2.5 rounded-full text-sm font-medium hover:border-ink transition-colors" data-testid="settings-notify-test">Envoyer un test</button>
+        <p className="text-stone text-xs">SMS & WhatsApp (via Twilio) : disponibles prochainement — nécessitent vos identifiants Twilio.</p>
       </div>
 
       <div className="border border-ink/10 p-6 space-y-4">
@@ -1446,6 +1469,347 @@ function RulesTab() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const MARKETING_SUBTABS = [
+  { key: "crm", label: "Clients (CRM)", icon: Users },
+  { key: "abandoned", label: "Paniers abandonnés", icon: ShoppingCart },
+  { key: "campaigns", label: "Campagnes email", icon: Mail },
+  { key: "bundles", label: "Packs / Bundles", icon: Gift },
+  { key: "flash", label: "Ventes flash", icon: Zap },
+];
+
+function MarketingTab() {
+  const [sub, setSub] = useState("crm");
+  return (
+    <div data-testid="admin-marketing-tab">
+      <div className="flex flex-wrap gap-2 mb-8">
+        {MARKETING_SUBTABS.map((s) => (
+          <button key={s.key} onClick={() => setSub(s.key)}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium border transition-colors ${sub === s.key ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone hover:border-ink"}`}
+            data-testid={`marketing-subtab-${s.key}`}>
+            <s.icon className="w-4 h-4" /> {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "crm" && <CrmPanel />}
+      {sub === "abandoned" && <AbandonedPanel />}
+      {sub === "campaigns" && <CampaignsPanel />}
+      {sub === "bundles" && <BundlesPanel />}
+      {sub === "flash" && <FlashPanel />}
+    </div>
+  );
+}
+
+function CampaignsPanel() {
+  const [items, setItems] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [form, setForm] = useState({ subject: "", body_html: "", segment: "newsletter" });
+  const [sending, setSending] = useState(false);
+  const load = () => { api.get("/admin/campaigns").then((r) => setItems(r.data.items)).catch(() => {}); api.get("/admin/segments/count").then((r) => setCounts(r.data)).catch(() => {}); };
+  useEffect(() => { load(); }, []);
+  const send = async (e) => {
+    e.preventDefault();
+    if (!form.subject || !form.body_html) { toast.error("Sujet et contenu requis"); return; }
+    setSending(true);
+    try { const r = await api.post("/admin/campaigns", form); toast.success(`Campagne créée → ${r.data.recipients} destinataire(s)`); setForm({ subject: "", body_html: "", segment: "newsletter" }); setTimeout(load, 1500); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setSending(false); }
+  };
+  const segLabel = { newsletter: "Abonnés newsletter", customers: "Tous les clients", vip: "Clients VIP", all: "Tout le monde" };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="campaigns-panel">
+      <form onSubmit={send} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2">Nouvelle campagne</p>
+        <In label="Sujet" value={form.subject} onChange={(v) => setForm({ ...form, subject: v })} />
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Segment</label>
+          <select value={form.segment} onChange={(e) => setForm({ ...form, segment: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="campaign-segment">
+            {Object.entries(segLabel).map(([k, l]) => <option key={k} value={k}>{l} ({counts[k] ?? "…"})</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Contenu (HTML autorisé)</label>
+          <textarea value={form.body_html} onChange={(e) => setForm({ ...form, body_html: e.target.value })} rows={6} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" placeholder="<h2>Nos nouveautés...</h2><p>...</p>" data-testid="campaign-body" />
+        </div>
+        <button type="submit" disabled={sending} className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="campaign-send-btn">{sending ? "Envoi…" : "Envoyer la campagne"}</button>
+      </form>
+      <div>
+        <p className="font-display font-bold text-lg mb-4">Historique</p>
+        {items.length === 0 && <p className="text-stone text-sm">Aucune campagne.</p>}
+        <div className="space-y-2">
+          {items.map((c) => (
+            <div key={c.id} className="border border-ink/10 p-4" data-testid={`campaign-${c.id}`}>
+              <div className="flex items-center justify-between">
+                <p className="font-medium">{c.subject}</p>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.status === "sent" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{c.status}</span>
+              </div>
+              <p className="text-stone text-sm mt-1">{segLabel[c.segment]} · {c.sent}/{c.recipients} envoyés · {new Date(c.created_at).toLocaleDateString()}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_BUNDLE = { title: "", description: "", product_ids: [], bundle_price: "", image: "" };
+function BundlesPanel() {
+  const [items, setItems] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [form, setForm] = useState(EMPTY_BUNDLE);
+  const load = () => api.get("/admin/bundles").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); api.get("/products?size=200").then((r) => setProducts(r.data.items)).catch(() => {}); }, []);
+  const toggleProduct = (id) => setForm((f) => ({ ...f, product_ids: f.product_ids.includes(id) ? f.product_ids.filter((x) => x !== id) : [...f.product_ids, id] }));
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.title || !form.product_ids.length || !form.bundle_price) { toast.error("Titre, produits et prix requis"); return; }
+    try { await api.post("/admin/bundles", { ...form, bundle_price: parseFloat(form.bundle_price) }); toast.success("Pack créé"); setForm(EMPTY_BUNDLE); load(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const del = async (id) => { await api.delete(`/admin/bundles/${id}`); load(); };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="bundles-panel">
+      <form onSubmit={save} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2">Nouveau pack</p>
+        <In label="Titre" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+        <In label="Prix du pack (€)" type="number" value={form.bundle_price} onChange={(v) => setForm({ ...form, bundle_price: v })} />
+        <In label="Image (URL, optionnel)" value={form.image} onChange={(v) => setForm({ ...form, image: v })} />
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Produits inclus ({form.product_ids.length})</label>
+          <div className="max-h-56 overflow-auto border border-ink/10 divide-y divide-ink/10">
+            {products.map((p) => (
+              <label key={p.id} className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-surface">
+                <input type="checkbox" checked={form.product_ids.includes(p.id)} onChange={() => toggleProduct(p.id)} className="accent-brand" data-testid={`bundle-prod-${p.id}`} />
+                <span className="truncate flex-1">{p.title}</span><span className="text-stone">{p.price.toFixed(2)}€</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <button type="submit" className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors" data-testid="bundle-save-btn">Créer le pack</button>
+      </form>
+      <div className="space-y-3">
+        <p className="font-display font-bold text-lg mb-1">Packs ({items.length})</p>
+        {items.length === 0 && <p className="text-stone text-sm">Aucun pack.</p>}
+        {items.map((b) => (
+          <div key={b.id} className="border border-ink/10 p-4 flex items-center gap-4" data-testid={`bundle-${b.id}`}>
+            {b.image && <img src={b.image} alt="" className="w-14 h-16 object-cover bg-surface" />}
+            <div className="flex-1">
+              <p className="font-medium">{b.title}</p>
+              <p className="text-stone text-sm">{b.products.length} produits · <span className="line-through">{b.normal_price.toFixed(2)}€</span> → <strong className="text-brand">{b.bundle_price.toFixed(2)}€</strong> (-{b.savings_pct}%)</p>
+            </div>
+            <button onClick={() => del(b.id)} className="text-brand hover:opacity-70 p-2" data-testid={`bundle-delete-${b.id}`}><Trash2 className="w-4 h-4" /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_FLASH = { title: "", scope: "category", target: "smart-home", discount_percent: "15", ends_at: "", active: true };
+function FlashPanel() {
+  const [items, setItems] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [form, setForm] = useState(EMPTY_FLASH);
+  const load = () => api.get("/admin/flash-sales").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); api.get("/products?size=200").then((r) => setProducts(r.data.items)).catch(() => {}); }, []);
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.title || !form.ends_at) { toast.error("Titre et date de fin requis"); return; }
+    try {
+      await api.post("/admin/flash-sales", { ...form, discount_percent: parseFloat(form.discount_percent) || 0, ends_at: new Date(form.ends_at).toISOString() });
+      toast.success("Vente flash créée"); setForm(EMPTY_FLASH); load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const del = async (id) => { await api.delete(`/admin/flash-sales/${id}`); load(); };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="flash-panel">
+      <form onSubmit={save} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2">Nouvelle vente flash</p>
+        <In label="Titre" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs uppercase font-bold text-stone mb-2 block">Portée</label>
+            <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="flash-scope">
+              <option value="category">Catégorie</option>
+              <option value="product">Produit</option>
+              <option value="all">Toute la boutique</option>
+            </select>
+          </div>
+          <In label="Réduction (%)" type="number" value={form.discount_percent} onChange={(v) => setForm({ ...form, discount_percent: v })} />
+        </div>
+        {form.scope === "category" && (
+          <div>
+            <label className="text-xs uppercase font-bold text-stone mb-2 block">Catégorie</label>
+            <select value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="flash-target-cat">
+              <option value="smart-home">smart-home</option><option value="workspace">workspace</option><option value="security">security</option>
+            </select>
+          </div>
+        )}
+        {form.scope === "product" && (
+          <div>
+            <label className="text-xs uppercase font-bold text-stone mb-2 block">Produit</label>
+            <select value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="flash-target-prod">
+              <option value="">— Choisir —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          </div>
+        )}
+        <In label="Fin de la vente" type="datetime-local" value={form.ends_at} onChange={(v) => setForm({ ...form, ends_at: v })} />
+        <button type="submit" className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors" data-testid="flash-save-btn">Lancer la vente flash</button>
+      </form>
+      <div className="space-y-3">
+        <p className="font-display font-bold text-lg mb-1">Ventes flash ({items.length})</p>
+        {items.length === 0 && <p className="text-stone text-sm">Aucune vente flash.</p>}
+        {items.map((s) => (
+          <div key={s.id} className="border border-ink/10 p-4 flex items-center gap-4" data-testid={`flash-${s.id}`}>
+            <Zap className={`w-5 h-5 ${s.is_active ? "text-brand" : "text-stone"}`} />
+            <div className="flex-1">
+              <p className="font-medium">{s.title} <span className="text-brand font-bold">-{s.discount_percent}%</span></p>
+              <p className="text-stone text-sm">{s.scope === "all" ? "Toute la boutique" : `${s.scope}: ${s.target}`} · fin {new Date(s.ends_at).toLocaleString()} {s.is_active ? "· 🟢 active" : "· ⚪ inactive"}</p>
+            </div>
+            <button onClick={() => del(s.id)} className="text-brand hover:opacity-70 p-2" data-testid={`flash-delete-${s.id}`}><Trash2 className="w-4 h-4" /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CrmPanel() {
+  const [items, setItems] = useState([]);
+  const [q, setQ] = useState("");
+  const [segment, setSegment] = useState("");
+  const [detail, setDetail] = useState(null);
+  const load = () => api.get(`/admin/customers?q=${encodeURIComponent(q)}&segment=${segment}`).then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [segment]);
+  const openDetail = async (id) => {
+    try { const r = await api.get(`/admin/customers/${id}`); setDetail(r.data); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+  const tierColor = (t) => t === "Platine" ? "bg-slate-800 text-white" : t === "Or" ? "bg-amber-100 text-amber-700" : t === "Argent" ? "bg-gray-200 text-gray-700" : "bg-orange-50 text-orange-700";
+  const segments = [{ k: "", l: "Tous" }, { k: "vip", l: "VIP" }, { k: "active", l: "Actifs" }, { k: "new", l: "Nouveaux" }];
+
+  return (
+    <div data-testid="crm-panel">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Rechercher un client…" className="w-full pl-11 pr-4 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="crm-search" />
+        </div>
+        <div className="flex gap-2">
+          {segments.map((s) => (
+            <button key={s.k} onClick={() => setSegment(s.k)} className={`px-4 py-2 rounded-full text-sm border transition-colors ${segment === s.k ? "bg-brand text-white border-brand" : "border-ink/20 hover:border-ink"}`} data-testid={`crm-segment-${s.k || "all"}`}>{s.l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border border-ink/10 divide-y divide-ink/10">
+        {items.length === 0 && <p className="p-8 text-stone text-center">Aucun client.</p>}
+        {items.map((c) => (
+          <div key={c.id} className="flex flex-wrap items-center gap-4 p-4" data-testid={`crm-customer-${c.id}`}>
+            <div className="flex-1 min-w-[180px]">
+              <p className="font-medium">{c.name || c.email}</p>
+              <p className="text-stone text-sm">{c.email}</p>
+            </div>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tierColor(c.tier)}`}>{c.tier}</span>
+            <span className={`text-xs uppercase font-bold px-2 py-1 rounded ${c.status === "VIP" ? "bg-brand/10 text-brand" : "bg-ink/5 text-stone"}`}>{c.status}</span>
+            <div className="text-right w-28">
+              <p className="font-display font-bold">{c.total_spent.toFixed(2)}€</p>
+              <p className="text-stone text-xs">{c.orders_count} cmd · {c.loyalty_points} pts</p>
+            </div>
+            <button onClick={() => openDetail(c.id)} className="text-sm border border-ink/20 rounded-full px-4 py-1.5 hover:border-ink transition-colors" data-testid={`crm-view-${c.id}`}>Fiche</button>
+          </div>
+        ))}
+      </div>
+
+      {detail && (
+        <div className="fixed inset-0 z-50 bg-ink/40 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-cream w-full max-w-2xl p-8 max-h-[90vh] overflow-auto" data-testid="crm-detail-modal">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="font-display font-bold text-2xl">{detail.customer.name || detail.customer.email}</h3>
+                <p className="text-stone">{detail.customer.email}</p>
+              </div>
+              <button onClick={() => setDetail(null)}><X className="w-6 h-6" /></button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              {[["Dépensé", `${detail.customer.total_spent.toFixed(2)}€`], ["Commandes", detail.customer.orders_count], ["Panier moyen", `${detail.customer.aov.toFixed(2)}€`], ["Points fidélité", detail.customer.loyalty_points]].map(([l, v]) => (
+                <div key={l} className="bg-surface p-3"><p className="text-xs uppercase text-stone font-bold">{l}</p><p className="font-display font-black text-xl mt-1">{v}</p></div>
+              ))}
+            </div>
+            <p className="font-bold uppercase text-xs tracking-wide text-stone mb-2">Historique commandes ({detail.orders.length})</p>
+            <div className="space-y-2 mb-6">
+              {detail.orders.slice(0, 20).map((o) => (
+                <div key={o.id} className="flex items-center gap-3 text-sm border border-ink/10 p-3">
+                  <span className="font-medium">#{o.id.slice(0, 8).toUpperCase()}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${o.payment_status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{o.payment_status}</span>
+                  <span className="text-stone">{new Date(o.created_at).toLocaleDateString()}</span>
+                  <span className="ml-auto font-display font-bold">{(o.total || 0).toFixed(2)}€</span>
+                </div>
+              ))}
+            </div>
+            {detail.returns.length > 0 && <p className="text-sm text-stone">{detail.returns.length} demande(s) de retour</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AbandonedPanel() {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState("");
+  const load = () => api.get("/admin/abandoned").then((r) => setData(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const remind = async (id) => {
+    setBusy(id);
+    try { await api.post(`/admin/abandoned/${id}/remind`); toast.success("Email de relance envoyé"); load(); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(""); }
+  };
+  const runAll = async () => {
+    setBusy("all");
+    try { const r = await api.post("/admin/abandoned/run"); toast.success(`${r.data.sent} relance(s) envoyée(s) sur ${r.data.candidates} candidat(s)`); load(); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(""); }
+  };
+  if (!data) return <p className="text-stone py-12 text-center">Chargement…</p>;
+
+  return (
+    <div data-testid="abandoned-panel">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+        {[
+          ["Paniers abandonnés", data.count],
+          ["CA potentiel", `${data.potential_revenue.toFixed(2)}€`],
+          ["Relancés", data.reminded],
+          ["Récupérés", `${data.recovered} · ${data.recovered_revenue.toFixed(2)}€`],
+        ].map(([l, v]) => (
+          <div key={l} className="bg-surface p-5" data-testid={`abandoned-kpi-${l}`}><p className="text-xs uppercase text-stone font-bold">{l}</p><p className="font-display font-black text-2xl mt-1">{v}</p></div>
+        ))}
+      </div>
+      <div className="flex justify-end mb-4">
+        <button onClick={runAll} disabled={busy === "all"} className="inline-flex items-center gap-2 bg-ink text-cream px-5 py-2.5 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="abandoned-run-all">
+          <Mail className="w-4 h-4" /> {busy === "all" ? "Envoi…" : "Relancer tout"}
+        </button>
+      </div>
+      <div className="border border-ink/10 divide-y divide-ink/10">
+        {data.items.length === 0 && <p className="p-8 text-stone text-center">Aucun panier abandonné. 🎉</p>}
+        {data.items.map((o) => (
+          <div key={o.id} className="flex flex-wrap items-center gap-4 p-4" data-testid={`abandoned-${o.id}`}>
+            <div className="flex-1 min-w-[180px]">
+              <p className="font-medium">#{o.id.slice(0, 8).toUpperCase()} · {(o.shipping_address?.email || o.user_email || "—")}</p>
+              <p className="text-stone text-sm">{new Date(o.created_at).toLocaleString()} · {(o.items || []).length} article(s)</p>
+            </div>
+            <p className="font-display font-bold text-lg w-24 text-right">{(o.total || 0).toFixed(2)}€</p>
+            {o.abandoned_email_sent && <span className="text-xs text-emerald-600 font-medium">✓ relancé</span>}
+            <button onClick={() => remind(o.id)} disabled={busy === o.id} className="text-sm border border-ink/20 rounded-full px-4 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`abandoned-remind-${o.id}`}>
+              {busy === o.id ? "…" : "Relancer"}
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

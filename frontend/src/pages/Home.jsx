@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Marquee from "react-fast-marquee";
-import { ArrowUpRight, ArrowRight, ShieldCheck, Truck, Headphones, RefreshCw, Star } from "lucide-react";
+import { ArrowUpRight, ArrowRight, ShieldCheck, Truck, Headphones, RefreshCw, Star, Zap, Gift } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
@@ -270,6 +270,79 @@ function CtaBand() {
   );
 }
 
+function FlashSaleBanner() {
+  const [sale, setSale] = useState(null);
+  const [left, setLeft] = useState("");
+  useEffect(() => {
+    api.get("/flash-sales/active").then((r) => {
+      const items = r.data.items || [];
+      if (items.length) setSale(items.sort((a, b) => (a.ends_at > b.ends_at ? 1 : -1))[0]);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!sale) return;
+    const tick = () => {
+      const diff = new Date(sale.ends_at) - new Date();
+      if (diff <= 0) { setLeft("Terminé"); return; }
+      const d = Math.floor(diff / 86400000), h = Math.floor((diff % 86400000) / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+      setLeft(`${d > 0 ? d + "j " : ""}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [sale]);
+  if (!sale) return null;
+  return (
+    <Link to="/shop" className="block bg-brand text-white" data-testid="flash-sale-banner">
+      <div className="max-w-[1600px] mx-auto px-5 md:px-10 py-4 flex flex-wrap items-center justify-center gap-3 text-center">
+        <Zap className="w-5 h-5" fill="currentColor" />
+        <span className="font-display font-bold uppercase tracking-wide text-lg">{sale.title} · −{Math.round(sale.discount_percent)}%</span>
+        <span className="hidden md:inline text-white/70">|</span>
+        <span className="font-mono font-bold text-lg tabular-nums" data-testid="flash-countdown">⏳ {left}</span>
+        <span className="underline underline-offset-4 text-sm ml-2">J'en profite →</span>
+      </div>
+    </Link>
+  );
+}
+
+function BundlesSection() {
+  const [items, setItems] = useState([]);
+  useEffect(() => { api.get("/bundles").then((r) => setItems(r.data.items || [])).catch(() => {}); }, []);
+  if (items.length === 0) return null;
+  return (
+    <section className="max-w-[1600px] mx-auto px-5 md:px-10 py-24 md:py-32" data-testid="bundles-section">
+      <div className="flex items-end justify-between mb-12">
+        <div>
+          <p className="text-xs tracking-[0.25em] uppercase font-bold text-brand mb-4">Économisez plus</p>
+          <h2 className="font-display font-black uppercase tracking-tighter text-4xl md:text-6xl">Nos Packs</h2>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {items.map((b) => (
+          <div key={b.id} className="border border-ink/10 overflow-hidden group" data-testid={`home-bundle-${b.id}`}>
+            <div className="aspect-[4/3] bg-[#f0efed] overflow-hidden">
+              {b.image && <img src={b.image} alt={b.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />}
+            </div>
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Gift className="w-4 h-4 text-brand" />
+                <span className="text-xs font-bold uppercase tracking-wide text-brand">Pack · −{b.savings_pct}%</span>
+              </div>
+              <h3 className="font-display font-bold text-xl mb-2">{b.title}</h3>
+              <p className="text-stone text-sm mb-4">{b.products.length} produits inclus</p>
+              <div className="flex items-baseline gap-3">
+                <span className="font-display font-black text-2xl">{b.bundle_price.toFixed(2)}€</span>
+                <span className="text-stone line-through">{b.normal_price.toFixed(2)}€</span>
+                <span className="ml-auto text-brand font-bold text-sm">Économisez {b.savings.toFixed(2)}€</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   return (
     <div data-testid="home-page">
@@ -284,8 +357,10 @@ export default function Home() {
         }}
       />
       <Hero />
+      <FlashSaleBanner />
       <MarqueeBar />
       <Featured />
+      <BundlesSection />
       <Categories />
       <SocialProof />
       <Manifesto />

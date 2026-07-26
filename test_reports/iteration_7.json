@@ -1,0 +1,32 @@
+{
+  "summary": "Phase 3 (CRM/loyalty/abandoned/campaigns/bundles/flash sales/notifications) fully validated. 24/24 backend tests pass; all admin Marketing subtabs render with required data-testids; storefront shows flash banner+countdown, bundles section, product flash badges; customer /account shows loyalty-card.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin (all tabs)", "issues": ["A red error toast 'ERROR fo... Invalid da...' briefly appears bottom-right after admin login; likely a stale/failed initial fetch surfacing to the toast. Non-blocking but visible to admins."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_erp_phase3.py",
+    "/app/test_reports/pytest/phase3_results.xml"
+  ],
+  "action_items": [
+    "Investigate origin of the transient 'Invalid data' error toast that flashes on /admin load (likely from an initial fetch/parse). Suppress on success, or catch and log without toasting.",
+    "Minor: React hydration warning in Admin Campaigns select — `<span>` inside `<option>` (visual-editor injected). Harmless but noisy in console."
+  ],
+  "critical_code_review_comments": [
+    "marketing.py savings_pct rounded to integer via round(...,0) but returned as float — consider int() for cleaner API contract.",
+    "crm.py _customer_summary triggers 2 queries per user in a loop (N+1). For large customer bases, aggregate via pipeline.",
+    "notifications._push swallows all exceptions per channel — good for resilience but consider returning status so test endpoint can report failures instead of always returning ok:true (dummy webhook returns 200 even when webhook fails)."
+  ],
+  "updated_files": ["/app/backend/tests/test_erp_phase3.py"],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (all required data-testids present, subtabs render, storefront elements present, loyalty-card shown)"},
+  "test_credentials": "admin@invovix.store/Invovix2026! ; client@invovix.store/Client2026!",
+  "seed_data_creation": "Test data (TEST_ prefixed bundle/flash/campaign) created and cleaned up within test lifecycle.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 fully validated. All /api/admin/(customers|abandoned|campaigns|bundles|flash-sales|notifications/test|segments/count) + /api/loyalty + /api/bundles + /api/flash-sales/active work. Flash sale correctly discounts /api/products?category=smart-home (original_price/price/flash_discount fields set). Analytics returns ad_spend_30d=100 and computes roas after PUT /api/admin/settings.",
+  "rca of the issue": "N/A — no blocking issues found."
+}

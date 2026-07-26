@@ -21,6 +21,7 @@ export default function Account() {
   const [returns, setReturns] = useState({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [loyalty, setLoyalty] = useState(null);
 
   const load = () => {
     api.get("/orders").then((r) => setOrders(r.data.items)).finally(() => setLoading(false));
@@ -29,6 +30,7 @@ export default function Account() {
       (r.data.items || []).forEach((x) => { map[x.order_id] = x; });
       setReturns(map);
     }).catch(() => {});
+    api.get("/loyalty").then((r) => setLoyalty(r.data)).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -74,6 +76,29 @@ export default function Account() {
           <h1 className="font-display font-black uppercase tracking-tighter text-5xl md:text-7xl">{t.account.title}</h1>
           <Link to="/wishlist" className="text-sm font-medium hover:text-brand transition-colors">{t.wishlist.title} →</Link>
         </div>
+
+        {loyalty && (
+          <div className="border border-ink/10 bg-ink text-cream p-6 md:p-8 mb-12 flex flex-wrap items-center gap-6" data-testid="loyalty-card">
+            <div>
+              <p className="text-xs tracking-[0.2em] uppercase font-bold text-brand mb-1">Programme fidélité</p>
+              <p className="font-display font-black text-4xl">{loyalty.points} <span className="text-lg font-bold text-cream/60">points</span></p>
+            </div>
+            <div className="h-12 w-px bg-cream/20 hidden md:block" />
+            <div>
+              <p className="text-xs uppercase text-cream/60 font-bold">Statut</p>
+              <p className="font-display font-black text-2xl">{loyalty.tier}</p>
+              <p className="text-cream/70 text-sm">{loyalty.perk}</p>
+            </div>
+            {loyalty.next_tier && (
+              <div className="flex-1 min-w-[180px]">
+                <p className="text-sm text-cream/70 mb-2">Plus que <strong className="text-brand">{loyalty.to_next.toFixed(2)}€</strong> pour atteindre <strong>{loyalty.next_tier}</strong></p>
+                <div className="h-2 bg-cream/15 rounded-full overflow-hidden">
+                  <div className="h-2 bg-brand rounded-full" style={{ width: `${Math.min(100, (loyalty.total_spent / (loyalty.total_spent + loyalty.to_next)) * 100)}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <h2 className="font-display font-bold text-2xl mb-6">{t.account.orders}</h2>
         {loading ? (

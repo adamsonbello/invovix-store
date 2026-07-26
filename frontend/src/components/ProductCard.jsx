@@ -15,6 +15,7 @@ export default function ProductCard({ product, index = 0 }) {
   const navigate = useNavigate();
   const title = lang === "en" ? product.title_en || product.title : product.title;
   const hasCompare = product.compare_at_price > product.price;
+  const flash = product.flash_discount > 0;
   const wished = has(product.id);
   const outOfStock = product.in_stock === false;
 
@@ -41,7 +42,11 @@ export default function ProductCard({ product, index = 0 }) {
             alt={title}
             className="absolute inset-0 w-full h-full object-cover hover-lift group-hover:scale-105"
           />
-          {hasCompare && (
+          {flash ? (
+            <span className="absolute top-4 left-4 bg-brand text-white text-[11px] font-bold tracking-wide px-2.5 py-1 uppercase inline-flex items-center gap-1" data-testid={`flash-badge-${product.id}`}>
+              ⚡ Flash −{Math.round(product.flash_discount)}%
+            </span>
+          ) : hasCompare && (
             <span className="absolute top-4 left-4 bg-brand text-white text-[11px] font-bold tracking-wide px-2.5 py-1 uppercase">
               -{Math.round(((product.compare_at_price - product.price) / product.compare_at_price) * 100)}%
             </span>
@@ -82,8 +87,10 @@ export default function ProductCard({ product, index = 0 }) {
               {title}
             </h3>
             <div className="text-right shrink-0">
-              <p className="font-display font-bold text-lg">{product.price.toFixed(2)}€</p>
-              {hasCompare && (
+              <p className={`font-display font-bold text-lg ${flash ? "text-brand" : ""}`}>{product.price.toFixed(2)}€</p>
+              {flash ? (
+                <p className="text-sm text-stone line-through">{product.original_price?.toFixed(2)}€</p>
+              ) : hasCompare && (
                 <p className="text-sm text-stone line-through">{product.compare_at_price.toFixed(2)}€</p>
               )}
             </div>

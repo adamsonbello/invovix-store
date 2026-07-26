@@ -26,6 +26,10 @@ from extras import extras_router, validate_promo, seed_extras
 from ops import ops_router
 from ai import ai_router, optimize_product_core
 from erp import erp_router, run_rules
+from crm import crm_router, run_abandoned_recovery
+import marketing as mktmod
+from marketing import marketing_router
+from notifications import notif_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -233,6 +237,9 @@ async def list_products(
     cursor = db.products.find(query, {"_id": 0}).skip((page - 1) * size).limit(size)
     items = await cursor.to_list(size)
     items = [cjmod.enrich_product(p) for p in items]
+    sales = await mktmod.get_active_flash_sales()
+    if sales:
+        items = [mktmod.apply_flash_to_product(p, sales) for p in items]
     return {"items": items, "total": total, "page": page, "size": size}
 
 
@@ -247,7 +254,11 @@ async def get_product(product_id: str):
     p = await db.products.find_one({"id": product_id}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Produit introuvable")
-    return cjmod.enrich_product(p)
+    p = cjmod.enrich_product(p)
+    sales = await mktmod.get_active_flash_sales()
+    if sales:
+        p = mktmod.apply_flash_to_product(p, sales)
+    return p
 
 
 @api.post("/admin/products")
@@ -492,6 +503,7 @@ async def image_proxy(url: str):
 async def _build_order(body: OrderInput, user: dict) -> dict:
     line_items = []
     subtotal = 0.0
+    sales = await mktmod.get_active_flash_sales()
     for it in body.items:
         p = await db.products.find_one({"id": it.product_id}, {"_id": 0})
         if not p:
@@ -503,6 +515,10 @@ async def _build_order(body: OrderInput, user: dict) -> dict:
         if not chosen and variants:
             chosen = variants[0]
         unit_price = chosen["price"] if chosen else p["price"]
+        # Apply active flash sale discount to unit price
+        disc = mktmod.flash_discount_for(p, sales) if sales else 0.0
+        if disc > 0:
+            unit_price = round(unit_price * (1 - disc / 100.0), 2)
         # Stock guard (only when stock is known/synced)
         if chosen and isinstance(chosen.get("stock"), int) and chosen["stock"] < it.quantity:
             raise HTTPException(400, f"Stock insuffisant pour « {p['title']} » (reste {chosen['stock']}).")
@@ -800,6 +816,9 @@ app.include_router(extras_router)
 app.include_router(ops_router)
 app.include_router(ai_router)
 app.include_router(erp_router)
+app.include_router(crm_router)
+app.include_router(marketing_router)
+app.include_router(notif_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -941,6 +960,18 @@ async def _tracking_sync_loop():
         await asyncio.sleep(interval)
 
 
+async def _abandoned_cart_loop():
+    """Relance automatique des checkouts abandonnés (commandes en attente de paiement)."""
+    interval = int(os.environ.get("ABANDONED_INTERVAL_MIN", "60")) * 60
+    await asyncio.sleep(180)  # settle after boot
+    while True:
+        try:
+            await run_abandoned_recovery()
+        except Exception as e:
+            logger.error(f"abandoned cart loop error: {e}")
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
@@ -953,6 +984,8 @@ async def startup():
         asyncio.create_task(_tracking_sync_loop())
     if os.environ.get("STOCK_AUTO_SYNC", "true").lower() == "true":
         asyncio.create_task(_stock_sync_loop())
+    if os.environ.get("ABANDONED_CART_ENABLED", "true").lower() == "true":
+        asyncio.create_task(_abandoned_cart_loop())
 
 
 @app.on_event("shutdown")

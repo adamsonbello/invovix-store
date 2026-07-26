@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from database import db
 import cj as cjmod
 import brevo as brevomod
+import crm as crmmod
+import notifications as notifmod
 
 logger = logging.getLogger("invovix")
 
@@ -33,6 +35,21 @@ async def handle_paid_order(order_id: str):
                 await db.orders.update_one({"id": order_id}, {"$set": {"confirmation_email_sent": True}})
         except Exception as e:
             logger.error(f"order confirmation email failed: {e}")
+
+    # 1b) Loyalty points (idempotent)
+    try:
+        await crmmod.accrue_loyalty(order)
+    except Exception as e:
+        logger.error(f"loyalty accrual failed: {e}")
+
+    # 1c) Multi-channel notification (Discord/Slack), once
+    if not order.get("notify_sent"):
+        try:
+            total = float(order.get("total", 0) or 0)
+            await notifmod.notify_channels(f"🛒 Nouvelle commande payée #{order_id[:8].upper()} — {total:.2f}€ ({to_name})")
+            await db.orders.update_one({"id": order_id}, {"$set": {"notify_sent": True}})
+        except Exception as e:
+            logger.error(f"channel notify failed: {e}")
 
     # 2) CJ fulfillment (idempotent)
     if _auto_fulfill() and cjmod.cj_configured() and not order.get("cj_order_id"):

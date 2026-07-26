@@ -29,6 +29,9 @@ DEFAULT_SETTINGS = {
     "vat_regime": "franchise",         # "franchise" (293 B, sans TVA) | "assujetti"
     "vat_rate": 20.0,
     "ad_spend_30d": 0.0,               # dépenses publicitaires 30j (saisie manuelle, pour ROAS/ROI)
+    "discord_webhook_url": "",
+    "slack_webhook_url": "",
+    "notify_new_order": False,
 }
 
 

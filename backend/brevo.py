@@ -178,6 +178,46 @@ def send_review_request(to_email: str, to_name: str, order: dict, frontend_url: 
     return _send_email(to_email, to_name, subject, html, text)
 
 
+def send_abandoned_cart(to_email: str, to_name: str, order: dict, frontend_url: str, promo_code: str = "") -> bool:
+    base = frontend_url.rstrip("/")
+    rows = _order_rows(order)
+    total = float(order.get("total", 0) or 0)
+    promo_block = ""
+    if promo_code:
+        promo_block = f"""<p style="margin:8px 0 20px;font-size:15px">Utilisez le code <strong style="background:#fff2ee;color:#ff3300;padding:3px 8px;border-radius:4px">{promo_code}</strong> pour <strong>-10%</strong> avant qu'il ne parte !</p>"""
+    subject = "Vous avez oublié quelque chose ? 🛒 ✦ Invovix"
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#0a0a0a">
+      <div style="background:#0a0a0a;color:#fff;padding:28px 24px"><h1 style="margin:0;font-size:26px;letter-spacing:-1px;text-transform:uppercase">INVOVIX</h1></div>
+      <div style="padding:28px 24px">
+        <p>Bonjour {to_name},</p>
+        <p>Votre panier vous attend toujours ! Vos articles sont encore disponibles — finalisez votre commande en un clic.</p>
+        <table style="width:100%;border-collapse:collapse;margin:20px 0">{rows}
+          <tr><td style='padding:10px 0;font-weight:bold;border-top:2px solid #0a0a0a'>Total</td><td style='padding:10px 0;text-align:right;font-weight:bold;border-top:2px solid #0a0a0a'>{total:.2f}€</td></tr>
+        </table>
+        {promo_block}
+        <p style="margin:24px 0"><a href="{base}/cart" style="background:#ff3300;color:#fff;text-decoration:none;padding:14px 26px;border-radius:999px;font-weight:bold">Finaliser ma commande</a></p>
+        <hr style="border:none;border-top:1px solid #e5e5e5"/>
+        <p style="font-size:13px;color:#777">You left items in your cart. Complete your order at {base}/cart</p>
+      </div>
+      <div style="padding:16px 24px;background:#f5f5f5;font-size:12px;color:#999">© Invovix · invovix.store</div>
+    </div>"""
+    text = f"Bonjour {to_name}, votre panier ({total:.2f}€) vous attend. Finalisez : {base}/cart" + (f" — code {promo_code} (-10%)" if promo_code else "")
+    return _send_email(to_email, to_name, subject, html, text)
+
+
+def send_campaign_email(to_email: str, to_name: str, subject: str, body_html: str, frontend_url: str = "") -> bool:
+    base = (frontend_url or "").rstrip("/")
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#0a0a0a">
+      <div style="background:#0a0a0a;color:#fff;padding:28px 24px"><h1 style="margin:0;font-size:26px;letter-spacing:-1px;text-transform:uppercase">INVOVIX</h1></div>
+      <div style="padding:28px 24px;font-size:15px;line-height:1.6">{body_html}</div>
+      <div style="padding:16px 24px;background:#f5f5f5;font-size:12px;color:#999">© Invovix · invovix.store · <a href="{base}" style="color:#999">invovix.store</a></div>
+    </div>"""
+    text = "Invovix — voir cet email dans votre navigateur."
+    return _send_email(to_email, to_name, subject, html, text)
+
+
 def send_contact_notification(admin_email: str, data: dict) -> bool:
     subject = f"Nouveau message de contact — {data.get('name','')}"
     html = f"""
