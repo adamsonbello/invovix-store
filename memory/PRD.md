@@ -65,7 +65,17 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 - **Factures PDF** (reportlab) : `GET /api/orders/{id}/invoice` (propriétaire/admin, commande payée). Bouton de téléchargement dans /account. VÉRIFIÉ (PDF 2.3 Ko).
 - **Retours & remboursements** : demande client (`POST /returns`), gestion admin (onglet Retours : approuver→remboursement Stripe auto avec fallback manuel / refuser). Statuts affichés côté client. VÉRIFIÉ (52/52 pytest).
 
+## Implemented (2026-06 — session Conformité e-facturation FR + synchro stock planifiée)
+- **Synchro stock CJ planifiée (cron)** : tâche de fond `_stock_sync_loop` (server.py) lancée au démarrage, intervalle `STOCK_SYNC_INTERVAL_HOURS` (défaut 24h), gated par `STOCK_AUTO_SYNC` (défaut true). Aucun clic requis. Endpoints manuels conservés (`/admin/products/sync-stock-all`, `/admin/products/{id}/sync-stock`). VÉRIFIÉ (iteration 4, sync-all 15 produits OK).
+- **Synchro suivi CJ planifiée** : `_tracking_sync_loop`, intervalle `CJ_SYNC_INTERVAL_MIN` (défaut 60), gated par `CJ_AUTO_SYNC`. VÉRIFIÉ.
+- **Conformité e-facturation B2C (mandat FR)** :
+  - **E-reporting** `GET /api/admin/ereporting` (JSON + CSV) : agrégation des ventes payées par jour × taux de TVA (régime franchise → TVA 0 ; assujetti → HT=TTC/1.2, TVA=TTC-HT). Export CSV depuis Admin > Réglages (bouton `ereporting-export-btn`). VÉRIFIÉ.
+  - **Factures PDF numérotées** : numérotation séquentielle continue par année (`INV-YYYY-NNNNN`, compteur `counters`), idempotente par commande, mentions légales vendeur (forme juridique, SIREN/SIRET, TVA intracom) via Réglages. `GET /api/orders/{id}/invoice` (payé uniquement, owner/admin). VÉRIFIÉ.
+  - **Identité légale** dans Admin > Réglages : forme juridique, SIREN, SIRET, régime TVA, taux — laissés en placeholders (choix utilisateur), configurables. Persistance VÉRIFIÉE.
+- Validation : **68/68 pytest** (dont test_ereporting_invoice.py) + UI e2e (iteration 4). Aucun bug.
+
 ## Requires user action (mise à jour)
+- **Identité légale société** : renseigner forme juridique, SIREN/SIRET, TVA intracom (et régime/taux TVA) dans Admin > Réglages avant émission de factures officielles (actuellement placeholders vides).
 - **reCAPTCHA v3** : ajouter le domaine de production `invovix.store` **ET** le domaine de preview aux domaines autorisés dans la console Google reCAPTCHA pour activer le scoring anti-bot complet (actuellement soft-fail hors invovix.store).
 - **WhatsApp** : renseigner le numéro international dans /admin > Réglages et activer le bouton.
 - PayPal **Live** : nécessite un compte Business (les clés actuelles sont Sandbox/test).
