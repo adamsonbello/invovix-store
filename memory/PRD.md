@@ -125,8 +125,26 @@ Livré en 2 lots testés (iteration 8 : 24/24 backend + 100% front pour 4A ; 4B 
 - **PWA installable** : manifest + icônes 192/512/maskable, service-worker (network-first nav, jamais /api), enregistré. VÉRIFIÉ.
 - **API publique read-only** `X-API-Key` : `GET /api/public/products|/{id}|/stats`. Clés API admin `/api/admin/api-keys` (CRUD+toggle). UI panneau « API publique ». VÉRIFIÉ (401/200).
 
-## Roadmap ERP (phases restantes)
-- **Phase 4 (reste)** : multi-boutiques (mod 19), gestion documentaire (mod 24), GraphQL + webhooks sortants (mod 25).
+## Implemented (2026-06 — Phase 5 : Multi-boutiques, Documents, Prévisions IA, Import CSV/URL)
+Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug bloquant).
+### Module 3 — Import produits CSV / Excel / URL (`imports.py`)
+- **Import fichier** `POST /api/admin/import/file` (multipart : CSV ou XLSX via pandas/openpyxl). Mapping colonnes tolérant FR/EN (title, description, price, buy_price, category, brand, sku, ean, stock, image(s)). Prix calculé depuis buy_price×marge si prix absent. Images externes localisées en /public/products.
+- **Import URL** `POST /api/admin/import/url` : scraping OpenGraph + JSON-LD (bs4/lxml) → titre, description, image, prix. 422 si aucune donnée produit détectée.
+- UI Admin > onglet « Import produits » (2 panneaux : fichier + URL) avec récap des résultats. VÉRIFIÉ (marge 15€×1.6=24€).
+### Module 24 — Gestion documentaire (`documents.py`)
+- Stockage **privé** (`/app/backend/storage/documents`, jamais public), servi via endpoint protégé. CRUD `/api/admin/documents` (upload multipart + name/category/tags/notes/linked_order/linked_supplier), `GET /{id}/download` (StreamingResponse), DELETE. Catégories : contract/invoice/supplier/legal/shipping/other. Max 25 Mo. Zone RBAC : operations.
+- UI Admin > onglet « Documents » : upload, filtres par catégorie, recherche, download/suppression. VÉRIFIÉ.
+### Module Prévisions & Prix IA (`predict.py`)
+- **Prévision CA** `GET /api/admin/predict/forecast` : régression linéaire (numpy) + moyenne mobile 7j sur 90j d'historique → prévision N jours, tendance, croissance 30j, demande par produit (30j vs 30j-1). Graphe recharts (historique + prévision pointillée).
+- **Moteur de prix** `GET /api/admin/predict/pricing` : suggestions par produit pour aligner la marge cible (défaut 55%) sans dépasser le prix barré ; `POST /pricing/apply` applique ; `POST /ai-price/{id}` = avis IA (Emergent LLM, recommended_price + score). Zones : analytics (lecture), catalog (apply), ai (avis IA).
+- UI Admin > onglet « Prévisions & Prix IA ». VÉRIFIÉ.
+### Module 19 — Multi-boutiques (`stores.py`)
+- Gestion centralisée : chaque boutique = catalogue central filtré par catégories (= synchronisation). CRUD `/api/admin/stores` (name, domain, tagline, currency, accent_color, categories, featured_only, active), `GET /{id}/catalog`. **Vitrine publique** `GET /api/public/stores/{slug}` (sans auth) renvoie config + produits (flash sales appliquées). Zone RBAC : operations.
+- UI Admin > onglet « Multi-boutiques » : formulaire (chips catégories, couleur accent), liste avec compteur produits + slug d'API vitrine. VÉRIFIÉ.
+- Dépendances ajoutées : openpyxl, beautifulsoup4, lxml.
+
+
+- **Phase 4 (reste)** : GraphQL + webhooks sortants avancés (mod 25). ✅ multi-boutiques (mod 19) et gestion documentaire (mod 24) faits en Phase 5.
 - **Phase 3 (reste)** : Notifications SMS/WhatsApp via Twilio (attente clés) ; push web.
 - **Phase 2 (reste)** : import CSV/Excel/URL de produits (module 3).
 - Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → CSV/Excel + import par URL (CJ = pipeline principal).

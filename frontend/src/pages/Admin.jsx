@@ -845,11 +845,11 @@ function CjTab({ onImport }) {
   );
 }
 
-function In({ label, value, onChange, type = "text", required, span2 }) {
+function In({ label, value, onChange, type = "text", required, span2, testid }) {
   return (
     <div className={span2 ? "md:col-span-2" : ""}>
       <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{label}</label>
-      <input type={type} step="any" value={value} required={required} onChange={(e) => onChange(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors" />
+      <input type={type} step="any" value={value} required={required} onChange={(e) => onChange(e.target.value)} data-testid={testid} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors" />
     </div>
   );
 }
@@ -2281,9 +2281,9 @@ function StoresTab() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" data-testid="admin-stores-tab">
       <form onSubmit={save} className="space-y-3 border border-ink/10 p-5 h-fit">
         <p className="font-display font-bold text-lg mb-2">{editing ? "Modifier la boutique" : "Nouvelle boutique"}</p>
-        <In label="Nom" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-        <In label="Domaine (ex: maison.invovix.store)" value={form.domain} onChange={(v) => setForm({ ...form, domain: v })} />
-        <In label="Accroche / tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} />
+        <In label="Nom" value={form.name} onChange={(v) => setForm({ ...form, name: v })} testid="store-name-input" />
+        <In label="Domaine (ex: maison.invovix.store)" value={form.domain} onChange={(v) => setForm({ ...form, domain: v })} testid="store-domain-input" />
+        <In label="Accroche / tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} testid="store-tagline-input" />
         <div className="grid grid-cols-2 gap-3">
           <In label="Devise" value={form.currency} onChange={(v) => setForm({ ...form, currency: v })} />
           <div>
