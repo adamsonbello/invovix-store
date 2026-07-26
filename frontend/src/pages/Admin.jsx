@@ -1069,6 +1069,9 @@ function SettingsTab() {
         discord_webhook_url: s.discord_webhook_url || "",
         slack_webhook_url: s.slack_webhook_url || "",
         notify_new_order: !!s.notify_new_order,
+        notify_sms_to: s.notify_sms_to || "",
+        sms_enabled: !!s.sms_enabled,
+        whatsapp_enabled: !!s.whatsapp_enabled,
       });
       toast.success(t.admin.settingsSaved);
     } catch (err) {
@@ -1135,7 +1138,22 @@ function SettingsTab() {
           <input value={s.slack_webhook_url || ""} onChange={(e) => setS({ ...s, slack_webhook_url: e.target.value })} placeholder="https://hooks.slack.com/services/..." className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-slack" />
         </div>
         <button type="button" onClick={async () => { try { await api.post("/admin/notifications/test", { discord_webhook_url: s.discord_webhook_url, slack_webhook_url: s.slack_webhook_url }); toast.success("Notification de test envoyée"); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } }} className="border border-ink/20 px-5 py-2.5 rounded-full text-sm font-medium hover:border-ink transition-colors" data-testid="settings-notify-test">Envoyer un test</button>
-        <p className="text-stone text-xs">SMS & WhatsApp (via Twilio) : disponibles prochainement — nécessitent vos identifiants Twilio.</p>
+        <div className="pt-4 border-t border-ink/10 space-y-3">
+          <p className="font-medium text-sm">SMS & WhatsApp (Twilio)</p>
+          <div>
+            <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Numéro destinataire (admin)</label>
+            <input value={s.notify_sms_to || ""} onChange={(e) => setS({ ...s, notify_sms_to: e.target.value })} placeholder="+33612345678" className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-sms-to" />
+          </div>
+          <label className="flex items-center gap-3 font-medium text-sm">
+            <input type="checkbox" checked={!!s.sms_enabled} onChange={(e) => setS({ ...s, sms_enabled: e.target.checked })} className="accent-brand w-4 h-4" data-testid="settings-sms-enabled" />
+            Recevoir les commandes par SMS
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={async () => { try { const r = await api.post("/admin/notifications/test-sms", { to: s.notify_sms_to }); toast.success("SMS de test envoyé (SID " + r.data.sid.slice(0, 10) + "…)"); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } }} className="border border-ink/20 px-4 py-2 rounded-full text-sm font-medium hover:border-ink transition-colors" data-testid="settings-sms-test">Test SMS</button>
+            <button type="button" onClick={async () => { try { const r = await api.post("/admin/notifications/test-sms", { to: s.notify_sms_to, whatsapp: true }); toast.success("WhatsApp de test envoyé"); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } }} className="border border-ink/20 px-4 py-2 rounded-full text-sm font-medium hover:border-ink transition-colors" data-testid="settings-wa-test">Test WhatsApp</button>
+          </div>
+        </div>
+        <p className="text-stone text-xs">Twilio configuré côté serveur. Note : l'expéditeur SMS doit être un numéro <strong>provisionné par Twilio</strong> (format +E.164) ; le WhatsApp requiert un expéditeur approuvé ou le sandbox Twilio.</p>
       </div>
 
       <div className="border border-ink/10 p-6 space-y-4">
@@ -1840,7 +1858,48 @@ function SecurityTab({ perms }) {
       <TwoFAPanel enabled={perms?.twofa_enabled} />
       {isAdmin && <StaffPanel />}
       {isAdmin && <ApiKeysPanel />}
+      {isAdmin && <WebhooksPanel />}
       {isAdmin && <LoginJournalPanel />}
+    </div>
+  );
+}
+
+function WebhooksPanel() {
+  const [items, setItems] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [form, setForm] = useState({ url: "", event: "order.paid" });
+  const load = () => api.get("/admin/webhooks").then((r) => { setItems(r.data.items); setEvents(r.data.events); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const create = async (e) => {
+    e.preventDefault();
+    if (!form.url) { toast.error("URL requise"); return; }
+    try { await api.post("/admin/webhooks", form); toast.success("Webhook ajouté"); setForm({ url: "", event: "order.paid" }); load(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const del = async (id) => { await api.delete(`/admin/webhooks/${id}`); load(); };
+  return (
+    <div data-testid="webhooks-panel">
+      <p className="font-display font-bold text-lg mb-1">Webhooks sortants</p>
+      <p className="text-stone text-sm mb-4">Recevez un POST JSON en temps réel sur vos outils externes (Zapier, ERP, Discord d'équipe…) quand un événement survient.</p>
+      <form onSubmit={create} className="flex flex-wrap gap-2 mb-4 max-w-2xl">
+        <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://votre-endpoint.com/webhook" className="flex-1 min-w-[240px] px-4 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="webhook-url" />
+        <select value={form.event} onChange={(e) => setForm({ ...form, event: e.target.value })} className="px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="webhook-event">
+          {events.map((ev) => <option key={ev} value={ev}>{ev}</option>)}
+        </select>
+        <button type="submit" className="bg-ink text-cream px-5 py-2.5 rounded-full font-medium hover:bg-brand transition-colors" data-testid="webhook-create-btn">Ajouter</button>
+      </form>
+      <div className="border border-ink/10 divide-y divide-ink/10 max-w-2xl">
+        {items.length === 0 && <p className="p-5 text-stone text-sm">Aucun webhook.</p>}
+        {items.map((w) => (
+          <div key={w.id} className="flex flex-wrap items-center gap-3 p-4" data-testid={`webhook-${w.id}`}>
+            <div className="flex-1 min-w-[200px]">
+              <p className="font-medium text-sm truncate">{w.url}</p>
+              <p className="text-stone text-xs">{w.event}{w.last_status != null && ` · dernier statut : ${w.last_status}`}</p>
+            </div>
+            <button onClick={() => del(w.id)} className="text-brand hover:opacity-70 p-2" data-testid={`webhook-delete-${w.id}`}><Trash2 className="w-4 h-4" /></button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

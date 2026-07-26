@@ -7,6 +7,7 @@ import cj as cjmod
 import brevo as brevomod
 import crm as crmmod
 import notifications as notifmod
+import publicapi as publicapimod
 
 logger = logging.getLogger("invovix")
 

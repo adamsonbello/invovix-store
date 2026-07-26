@@ -32,6 +32,8 @@ DEFAULT_SETTINGS = {
     "discord_webhook_url": "",
     "slack_webhook_url": "",
     "notify_new_order": False,
+    "notify_sms_to": "",
+    "sms_enabled": False,
 }
 
 
@@ -58,6 +60,11 @@ class SettingsInput(BaseModel):
     vat_regime: str = "franchise"
     vat_rate: float = 20.0
     ad_spend_30d: float = 0.0
+    discord_webhook_url: str = ""
+    slack_webhook_url: str = ""
+    notify_new_order: bool = False
+    notify_sms_to: str = ""
+    sms_enabled: bool = False
 
 
 @extras_router.get("/settings")
