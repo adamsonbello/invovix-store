@@ -143,6 +143,12 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 - UI Admin > onglet « Multi-boutiques » : formulaire (chips catégories, couleur accent), liste avec compteur produits + slug d'API vitrine. VÉRIFIÉ.
 - Dépendances ajoutées : openpyxl, beautifulsoup4, lxml.
 
+### Rendu public par domaine (vitrine multi-boutique) — 2026-06
+- **Page vitrine standalone** `/app/frontend/src/pages/PublicStore.jsx`, route `/b/:slug` (hors Layout principal) : header/hero/grille/footer entièrement **thématisés** par la couleur d'accent de la boutique, nom + tagline, badges promo, panier partagé Invovix, SEO (title/description/OG) par boutique, filtres catégories. Feeling « boutique totalement différente » sur une seule base de code.
+- **Détection par domaine** (`DomainGate` dans App.js) : en production, un visiteur sur `maison.invovix.store` voit automatiquement la vitrine dédiée (résolue via `GET /api/public/store-resolve?host=`). Les domaines primaires (invovix.store, preview, localhost) rendent le site principal. En preview : accès direct `/b/:slug`.
+- Backend : endpoint `GET /api/public/store-resolve` ajouté à `stores.py`. Boutique démo « Invovix Maison » (slug `invovix-maison`, domaine `maison.invovix.store`, accent vert, catégorie smart-home) créée pour SEO par niche.
+- VÉRIFIÉ : vitrine `/b/invovix-maison` (13 produits, thème vert) + site principal intact (screenshots).
+
 
 - **Phase 4 (reste)** : GraphQL + webhooks sortants avancés (mod 25). ✅ multi-boutiques (mod 19) et gestion documentaire (mod 24) faits en Phase 5.
 - **Phase 3 (reste)** : Notifications SMS/WhatsApp via Twilio (attente clés) ; push web.

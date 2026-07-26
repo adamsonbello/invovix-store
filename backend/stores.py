@@ -103,6 +103,21 @@ async def store_catalog(store_id: str, admin: dict = Depends(require_area("opera
 
 
 # ----------------------------- Vitrine publique (par domaine/slug) -----------------------------
+@stores_router.get("/public/store-resolve")
+async def resolve_store(host: str = ""):
+    """Résout un nom d'hôte vers un slug de boutique (détection par domaine)."""
+    host = (host or "").lower().strip()
+    if not host:
+        raise HTTPException(404, "Hôte manquant")
+    store = await db.stores.find_one(
+        {"$or": [{"domain": host}, {"domain": host.replace("www.", "")}], "active": True},
+        {"_id": 0, "slug": 1, "name": 1},
+    )
+    if not store:
+        raise HTTPException(404, "Aucune boutique pour ce domaine")
+    return {"slug": store["slug"], "name": store["name"]}
+
+
 @stores_router.get("/public/stores/{slug}")
 async def public_store(slug: str):
     store = await db.stores.find_one({"$or": [{"slug": slug}, {"domain": slug}], "active": True}, {"_id": 0})
