@@ -57,6 +57,14 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
 - **Emails transactionnels complets** (Brevo) : **confirmation de commande** (au paiement, idempotent), **expédition + suivi** (au passage "shipped" ou via sync CJ), + review post‑livraison (existant). Suivi colis affiché aussi dans l'espace client (/account). VÉRIFIÉ (Brevo 201).
 - **Pages légales RGPD/CGV** : `/legal/mentions`, `/legal/cgv`, `/legal/confidentialite` (contenu FR/EN, placeholders [À COMPLÉTER] pour infos société) + **bandeau consentement cookies** (accept/refuse, push dataLayer GTM). Liens footer + sitemap. VÉRIFIÉ.
 
+## Implemented (2026-06 — session Back-office solide : stock, variantes, analytics, factures, retours)
+- **Synchro stock CJ** : stock temps réel par variante via `/product/stock/queryByVid`. Endpoints `POST /admin/products/{id}/sync-stock` et `POST /admin/products/sync-stock-all` (paced). Storefront : badges En stock / Stock faible / Épuisé, blocage ajout panier + checkout si rupture (back+front). VÉRIFIÉ (stock réel 7).
+- **Variantes produit** : le produit expose `variants` (nom/prix/image/stock/vid), `has_variants`, `stock_total`, `in_stock` (raw `cj_variants` masqué). Sélecteur sur la fiche produit, prix/image/stock dynamiques, panier & commande portent `variant_id` (→ bon vid au fulfillment CJ). VÉRIFIÉ.
+- **Synchro auto du suivi** : tâche planifiée (`CJ_SYNC_INTERVAL_MIN`, défaut 60 min) qui sync les commandes ouvertes + email d'expédition auto ; + **webhook CJ** `POST /api/webhook/cj`. VÉRIFIÉ.
+- **Tableau de bord Analytics** (onglet admin, recharts) : CA, commandes payées, panier moyen, taux de conversion, visites 30j, clients, courbe CA 30j, top produits, répartition par statut. Tracking visites `POST /api/track/pageview`. VÉRIFIÉ.
+- **Factures PDF** (reportlab) : `GET /api/orders/{id}/invoice` (propriétaire/admin, commande payée). Bouton de téléchargement dans /account. VÉRIFIÉ (PDF 2.3 Ko).
+- **Retours & remboursements** : demande client (`POST /returns`), gestion admin (onglet Retours : approuver→remboursement Stripe auto avec fallback manuel / refuser). Statuts affichés côté client. VÉRIFIÉ (52/52 pytest).
+
 ## Requires user action (mise à jour)
 - **reCAPTCHA v3** : ajouter le domaine de production `invovix.store` **ET** le domaine de preview aux domaines autorisés dans la console Google reCAPTCHA pour activer le scoring anti-bot complet (actuellement soft-fail hors invovix.store).
 - **WhatsApp** : renseigner le numéro international dans /admin > Réglages et activer le bouton.

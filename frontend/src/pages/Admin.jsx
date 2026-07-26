@@ -754,7 +754,7 @@ function AnalyticsTab() {
                 <XAxis type="number" hide />
                 <YAxis type="category" dataKey="title" tick={{ fontSize: 9 }} width={90} tickFormatter={(v) => (v || "").slice(0, 14)} />
                 <Tooltip />
-                <Bar dataKey="qty" fill="#0a0a0a" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="qty" fill="#ff3300" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

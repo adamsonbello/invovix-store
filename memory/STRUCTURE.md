@@ -19,6 +19,8 @@ React (CRA) + Tailwind + Framer Motion + Lenis · FastAPI + Motor (MongoDB) · I
 │   ├── brevo.py         # Emails : confirmation, expédition/suivi, avis, contact
 │   ├── extras.py        # settings (bannière/WhatsApp), related, avis vedettes,
 │   │                    #   wishlist, codes promo
+│   ├── ops.py           # analytics, sync stock CJ, retours/remboursements Stripe,
+│   │                    #   factures PDF (reportlab), track pageview
 │   ├── requirements.txt
 │   └── .env             # MONGO_URL, DB_NAME, CJ_API_KEY, STRIPE/PAYPAL, BREVO,
 │                        #   RECAPTCHA_SECRET_KEY, FRONTEND_URL, (CJ_* fulfillment opts)

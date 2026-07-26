@@ -198,9 +198,8 @@ async def decide_return(return_id: str, body: ReturnDecision, admin: dict = Depe
         raise HTTPException(400, "Action invalide")
 
     order = await db.orders.find_one({"id": ret["order_id"]}, {"_id": 0})
-    refund_res = {"refunded": False, "reason": "manual"}
-    if order and (order.get("payment_method") == "stripe" or True):
-        refund_res = await _stripe_refund(ret["order_id"], ret.get("amount", 0))
+    # Attempt an automatic Stripe refund; falls back to manual for PayPal / missing tx.
+    refund_res = await _stripe_refund(ret["order_id"], ret.get("amount", 0))
     new_status = "refunded" if refund_res.get("refunded") else "approved"
     await db.returns.update_one(
         {"id": return_id},
