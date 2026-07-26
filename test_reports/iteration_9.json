@@ -1,0 +1,38 @@
+{
+  "summary": "Tested all 4 new ERP modules end-to-end (imports, documents, predict/pricing, multi-boutiques). Backend: 21/21 pytest cases PASS in 9.94s including AI pricing (Emergent LLM) and CSV price-computation logic. Frontend: admin login OK, all 4 new tabs render without console errors, store creation via UI succeeds with success toast, predict-total + 16 pricing-apply buttons + doc-upload-btn all present. No blocking issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StoresTab", "issue": "No data-testid on Name/Domaine/Tagline text inputs — tests fell back to nth(0) input. Adding testids like store-name-input would improve testability.", "selector": "form input[type=text]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_modules.py",
+    "/app/test_reports/pytest/new_modules.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid=\"store-name-input\" (and domain/tagline) on the store form <In/> inputs for more robust E2E tests."
+  ],
+  "critical_code_review_comments": [
+    "imports.py _localize_images: downloaded image extension is decided only by presence of 'png' in content-type; svg/webp fall back to .jpg. Minor.",
+    "documents.py: STORAGE_DIR under /app/backend/storage is fine but not persisted through container rebuilds — consider a mounted volume in prod.",
+    "predict.py apply_price: requires 'catalog' area while pricing/forecast require 'analytics' — a marketing role that has analytics but not catalog can view suggestions but not apply. Confirm this is intended.",
+    "stores.py public_store: enriches with cj/marketing (flash sales). If marketing module import fails silently, no logging — a debug log would help troubleshooting.",
+    "Admin.jsx StoresTab form uses shared <In/> component with no testids on inner inputs; add for testability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_modules.py (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (all critical flows verified)"},
+  "test_credentials": "admin@invovix.store / Invovix2026! — works, no 2FA",
+  "seed_data_creation": "Created (and cleaned up in tests) 1 store TEST_Boutique_Alpha + 1 document TEST_Contract_A. Also imported 2-3 TEST_Prod_* products via CSV that remain (per instructions, main agent will clean). Frontend test also created a store 'TEST_Boutique_UI' (slug test-boutique-ui) that remains in DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New modules are stable. CSV import price-computation (empty price + buy_price * margin) verified: 15 * 1.6 = 24.0 asserted. AI pricing endpoint tolerated 502 fallback but returned 200 with recommended_price. Public store endpoint /api/public/stores/{slug} returns 200 without auth. RBAC: unauthenticated calls return 401/403. Test file: /app/backend/tests/test_new_modules.py is idempotent (uses unique names / cleans docs & stores).",
+  "rca of the issue": "N/A — no issues found."
+}

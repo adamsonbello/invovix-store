@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap, Upload, FileText, TrendingUp, Store, Link2, CheckCircle2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -26,10 +26,14 @@ export default function Admin() {
     { key: "analytics", label: t.admin.tabAnalytics, area: "analytics" },
     { key: "ai", label: t.admin.tabAi, area: "ai" },
     { key: "products", label: t.admin.tabProducts, area: "catalog" },
+    { key: "import", label: "Import produits", area: "catalog" },
     { key: "orders", label: t.admin.tabOrders, area: "orders" },
     { key: "returns", label: t.admin.tabReturns, area: "orders" },
     { key: "suppliers", label: "Fournisseurs", area: "operations" },
+    { key: "stores", label: "Multi-boutiques", area: "operations" },
+    { key: "documents", label: "Documents", area: "operations" },
     { key: "rules", label: "Règles & Alertes", area: "operations" },
+    { key: "predict", label: "Prévisions & Prix IA", area: "analytics" },
     { key: "cj", label: t.admin.tabCj, area: "cj" },
     { key: "blog", label: t.admin.tabBlog, area: "content" },
     { key: "messages", label: t.admin.tabMessages, area: "support" },
@@ -87,10 +91,14 @@ export default function Admin() {
         {tab === "analytics" && <AnalyticsTab />}
         {tab === "ai" && <AiTab />}
         {tab === "products" && <ProductsTab onChange={loadStats} />}
+        {tab === "import" && <ImportTab onChange={loadStats} />}
         {tab === "orders" && <OrdersTab />}
         {tab === "returns" && <ReturnsTab />}
         {tab === "suppliers" && <SuppliersTab />}
+        {tab === "stores" && <StoresTab />}
+        {tab === "documents" && <DocumentsTab />}
         {tab === "rules" && <RulesTab />}
+        {tab === "predict" && <PredictTab />}
         {tab === "cj" && <CjTab onImport={loadStats} />}
         {tab === "blog" && <BlogTab />}
         {tab === "messages" && <MessagesTab />}
@@ -2137,6 +2145,388 @@ function ReturnsTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+const CATS = [
+  { key: "smart-home", label: "Maison connectée" },
+  { key: "security", label: "Sécurité" },
+  { key: "workspace", label: "Télétravail" },
+];
+
+// ----------------------------- Import produits (CSV / Excel / URL) -----------------------------
+function ImportTab({ onChange }) {
+  const [file, setFile] = useState(null);
+  const [margin, setMargin] = useState(60);
+  const [category, setCategory] = useState("smart-home");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [url, setUrl] = useState("");
+  const [urlBusy, setUrlBusy] = useState(false);
+  const [urlResult, setUrlResult] = useState(null);
+
+  const importFile = async (e) => {
+    e.preventDefault();
+    if (!file) { toast.error("Sélectionnez un fichier CSV ou Excel"); return; }
+    setBusy(true); setResult(null);
+    const fd = new FormData();
+    fd.append("file", file); fd.append("margin", margin); fd.append("category", category);
+    try {
+      const r = await api.post("/admin/import/file", fd);
+      setResult(r.data);
+      toast.success(`${r.data.imported} produit(s) importé(s)`);
+      onChange && onChange();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+
+  const importUrl = async (e) => {
+    e.preventDefault();
+    if (!url) { toast.error("Collez une URL produit"); return; }
+    setUrlBusy(true); setUrlResult(null);
+    try {
+      const r = await api.post("/admin/import/url", { url, margin: Number(margin), category });
+      setUrlResult(r.data);
+      toast.success("Produit importé depuis l'URL");
+      onChange && onChange();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setUrlBusy(false); }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="admin-import-tab">
+      <div>
+        <p className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Upload className="w-5 h-5 text-brand" /> Import par fichier CSV / Excel</p>
+        <p className="text-stone text-sm mb-4">Colonnes reconnues : title, description, price, buy_price, category, brand, sku, ean, stock, image(s). La marge s'applique si le prix de vente est absent.</p>
+        <form onSubmit={importFile} className="border border-ink/10 p-5 space-y-4">
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} className="w-full text-sm" data-testid="import-file-input" />
+          <div className="grid grid-cols-2 gap-3">
+            <In label="Marge par défaut (%)" type="number" value={margin} onChange={setMargin} />
+            <div>
+              <label className="text-xs uppercase font-bold text-stone mb-2 block">Catégorie par défaut</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="import-category">
+                {CATS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <button type="submit" disabled={busy} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="import-file-btn">{busy ? "Import en cours…" : "Importer le fichier"}</button>
+        </form>
+        {result && (
+          <div className="mt-4 border border-ink/10 p-4" data-testid="import-file-result">
+            <p className="font-medium">{result.imported} importé(s) · {result.errors} erreur(s) · {result.total_rows} ligne(s)</p>
+            <div className="mt-2 max-h-64 overflow-y-auto space-y-1 text-sm">
+              {result.results.map((r, i) => (
+                <p key={i} className={r.status === "imported" ? "text-emerald-700" : "text-brand"}>
+                  {r.status === "imported" ? `✓ ${r.title} — ${r.price}€` : `✗ ${r.reason}`}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Link2 className="w-5 h-5 text-brand" /> Import par URL produit</p>
+        <p className="text-stone text-sm mb-4">Collez l'URL d'une page produit. Invovix extrait titre, description, image et prix (métadonnées OpenGraph / JSON-LD).</p>
+        <form onSubmit={importUrl} className="border border-ink/10 p-5 space-y-4">
+          <In label="URL du produit" value={url} onChange={setUrl} />
+          <button type="submit" disabled={urlBusy} className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="import-url-btn">{urlBusy ? "Analyse…" : "Importer depuis l'URL"}</button>
+        </form>
+        {urlResult?.product && (
+          <div className="mt-4 border border-ink/10 p-4 flex gap-4" data-testid="import-url-result">
+            {urlResult.product.images?.[0] && <img src={urlResult.product.images[0]} alt="" className="w-20 h-20 object-cover" />}
+            <div>
+              <p className="font-medium">{urlResult.product.title}</p>
+              <p className="text-brand font-display font-black text-xl">{urlResult.product.price}€</p>
+              <p className="text-stone text-xs mt-1 line-clamp-2">{(urlResult.product.description || "").replace(/<[^>]+>/g, "").slice(0, 120)}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------- Multi-boutiques -----------------------------
+const EMPTY_STORE = { name: "", domain: "", tagline: "", currency: "EUR", accent_color: "#FF3300", categories: [], featured_only: false, active: true };
+
+function StoresTab() {
+  const [items, setItems] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [form, setForm] = useState(EMPTY_STORE);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = () => api.get("/admin/stores").then((r) => { setItems(r.data.items); setCats(r.data.available_categories || []); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const toggleCat = (c) => setForm((f) => ({ ...f, categories: f.categories.includes(c) ? f.categories.filter((x) => x !== c) : [...f.categories, c] }));
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name) { toast.error("Nom requis"); return; }
+    setSaving(true);
+    try {
+      if (editing) await api.put(`/admin/stores/${editing}`, form);
+      else await api.post("/admin/stores", form);
+      toast.success("Boutique enregistrée"); setForm(EMPTY_STORE); setEditing(null); load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setSaving(false); }
+  };
+  const edit = (s) => { setEditing(s.id); setForm({ ...EMPTY_STORE, ...s }); };
+  const del = async (id) => { await api.delete(`/admin/stores/${id}`); load(); toast.success("Supprimée"); };
+  const catLabel = (k) => (CATS.find((c) => c.key === k)?.label || k);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" data-testid="admin-stores-tab">
+      <form onSubmit={save} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2">{editing ? "Modifier la boutique" : "Nouvelle boutique"}</p>
+        <In label="Nom" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+        <In label="Domaine (ex: maison.invovix.store)" value={form.domain} onChange={(v) => setForm({ ...form, domain: v })} />
+        <In label="Accroche / tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} />
+        <div className="grid grid-cols-2 gap-3">
+          <In label="Devise" value={form.currency} onChange={(v) => setForm({ ...form, currency: v })} />
+          <div>
+            <label className="text-xs uppercase font-bold text-stone mb-2 block">Couleur accent</label>
+            <input type="color" value={form.accent_color} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} className="w-full h-11 border border-ink/20 bg-transparent" data-testid="store-color" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Catégories synchronisées (vide = tout le catalogue)</label>
+          <div className="flex flex-wrap gap-2">
+            {(cats.length ? cats : CATS.map((c) => c.key)).map((c) => (
+              <button type="button" key={c} onClick={() => toggleCat(c)} className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${form.categories.includes(c) ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone"}`} data-testid={`store-cat-${c}`}>{catLabel(c)}</button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.featured_only} onChange={(e) => setForm({ ...form, featured_only: e.target.checked })} data-testid="store-featured" /> Produits en vedette uniquement</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} data-testid="store-active" /> Boutique active</label>
+        <button type="submit" disabled={saving} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="store-save-btn">{saving ? "…" : "Enregistrer"}</button>
+        {editing && <button type="button" onClick={() => { setEditing(null); setForm(EMPTY_STORE); }} className="w-full border border-ink/20 py-2.5 rounded-full text-sm">Annuler</button>}
+      </form>
+
+      <div className="lg:col-span-2">
+        <p className="font-display font-bold text-lg mb-4">Boutiques ({items.length}) · catalogue central synchronisé</p>
+        {items.length === 0 && <p className="text-stone">Aucune boutique. Créez votre première boutique.</p>}
+        <div className="space-y-3">
+          {items.map((s) => (
+            <div key={s.id} className="border border-ink/10 p-4" data-testid={`store-${s.id}`}>
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="w-3 h-8 rounded-sm" style={{ backgroundColor: s.accent_color }} />
+                <div className="flex-1 min-w-[160px]">
+                  <p className="font-medium flex items-center gap-2"><Store className="w-4 h-4 text-stone" /> {s.name} {!s.active && <span className="text-xs text-stone">(inactive)</span>}</p>
+                  <p className="text-stone text-sm">{s.domain || "sans domaine"} · {s.tagline || "—"}</p>
+                  <p className="text-stone text-xs mt-1">{(s.categories?.length ? s.categories.map(catLabel).join(", ") : "Tout le catalogue")}{s.featured_only ? " · vedette" : ""}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs uppercase text-stone font-bold">Produits</p>
+                  <p className="font-display font-black text-2xl text-brand" data-testid={`store-count-${s.id}`}>{s.product_count}</p>
+                </div>
+                <button onClick={() => edit(s)} className="text-sm text-stone hover:text-ink px-2" data-testid={`store-edit-${s.id}`}>Modifier</button>
+                <button onClick={() => del(s.id)} className="text-brand hover:opacity-70 p-2" data-testid={`store-delete-${s.id}`}><Trash2 className="w-4 h-4" /></button>
+              </div>
+              <p className="text-stone text-xs mt-2">API vitrine : <code className="bg-ink/5 px-1.5 py-0.5 rounded">/api/public/stores/{s.slug}</code></p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------- Documents -----------------------------
+const DOC_CATS = { contract: "Contrats", invoice: "Factures", supplier: "Fournisseurs", legal: "Juridique", shipping: "Expédition", other: "Autre" };
+
+function DocumentsTab() {
+  const [items, setItems] = useState([]);
+  const [byCat, setByCat] = useState({});
+  const [filter, setFilter] = useState("");
+  const [q, setQ] = useState("");
+  const [file, setFile] = useState(null);
+  const [meta, setMeta] = useState({ name: "", category: "contract", tags: "", notes: "" });
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get("/admin/documents", { params: { category: filter, q } }).then((r) => { setItems(r.data.items); setByCat(r.data.by_category || {}); }).catch(() => {});
+  useEffect(() => { load(); }, [filter]); // eslint-disable-line
+
+  const upload = async (e) => {
+    e.preventDefault();
+    if (!file) { toast.error("Sélectionnez un fichier"); return; }
+    setBusy(true);
+    const fd = new FormData();
+    fd.append("file", file); fd.append("name", meta.name); fd.append("category", meta.category); fd.append("tags", meta.tags); fd.append("notes", meta.notes);
+    try {
+      await api.post("/admin/documents", fd);
+      toast.success("Document ajouté"); setFile(null); setMeta({ name: "", category: "contract", tags: "", notes: "" }); load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+  const download = async (d) => {
+    try {
+      const r = await api.get(`/admin/documents/${d.id}/download`, { responseType: "blob" });
+      const u = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement("a"); a.href = u; a.download = d.filename; a.click(); window.URL.revokeObjectURL(u);
+    } catch { toast.error("Téléchargement impossible"); }
+  };
+  const del = async (id) => { await api.delete(`/admin/documents/${id}`); load(); toast.success("Supprimé"); };
+  const fmtSize = (b) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" data-testid="admin-documents-tab">
+      <form onSubmit={upload} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2 flex items-center gap-2"><FileText className="w-5 h-5 text-brand" /> Ajouter un document</p>
+        <input type="file" onChange={(e) => setFile(e.target.files[0])} className="w-full text-sm" data-testid="doc-file-input" />
+        <In label="Nom (optionnel)" value={meta.name} onChange={(v) => setMeta({ ...meta, name: v })} />
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Catégorie</label>
+          <select value={meta.category} onChange={(e) => setMeta({ ...meta, category: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="doc-category">
+            {Object.entries(DOC_CATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <In label="Tags (séparés par virgule)" value={meta.tags} onChange={(v) => setMeta({ ...meta, tags: v })} />
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Notes</label>
+          <textarea value={meta.notes} onChange={(e) => setMeta({ ...meta, notes: e.target.value })} rows={2} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="doc-notes" />
+        </div>
+        <button type="submit" disabled={busy} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="doc-upload-btn">{busy ? "Envoi…" : "Téléverser"}</button>
+        <p className="text-stone text-xs">Stockage privé (non public). Max 25 Mo.</p>
+      </form>
+
+      <div className="lg:col-span-2">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <button onClick={() => setFilter("")} className={`px-3 py-1.5 rounded-full text-sm border ${filter === "" ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone"}`} data-testid="doc-filter-all">Tous ({items.length})</button>
+          {Object.entries(DOC_CATS).map(([k, v]) => (
+            <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-full text-sm border ${filter === k ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone"}`} data-testid={`doc-filter-${k}`}>{v}{byCat[k] ? ` (${byCat[k]})` : ""}</button>
+          ))}
+          <div className="flex-1 min-w-[160px] flex gap-2">
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Rechercher…" className="flex-1 px-3 py-1.5 border border-ink/20 bg-transparent outline-none text-sm" data-testid="doc-search" />
+            <button onClick={load} className="p-2 border border-ink/20"><Search className="w-4 h-4" /></button>
+          </div>
+        </div>
+        {items.length === 0 && <p className="text-stone">Aucun document.</p>}
+        <div className="space-y-2">
+          {items.map((d) => (
+            <div key={d.id} className="border border-ink/10 p-4 flex items-center gap-4" data-testid={`doc-${d.id}`}>
+              <FileText className="w-8 h-8 text-stone shrink-0" strokeWidth={1.5} />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{d.name}</p>
+                <p className="text-stone text-sm">{DOC_CATS[d.category]} · {fmtSize(d.size)} · {new Date(d.created_at).toLocaleDateString()}{d.tags?.length ? ` · ${d.tags.join(", ")}` : ""}</p>
+                {d.notes && <p className="text-stone text-xs mt-0.5 truncate">{d.notes}</p>}
+              </div>
+              <button onClick={() => download(d)} className="p-2 text-stone hover:text-ink" data-testid={`doc-download-${d.id}`}><Download className="w-4 h-4" /></button>
+              <button onClick={() => del(d.id)} className="p-2 text-brand hover:opacity-70" data-testid={`doc-delete-${d.id}`}><Trash2 className="w-4 h-4" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------- Prévisions & Prix IA -----------------------------
+function PredictTab() {
+  const [fc, setFc] = useState(null);
+  const [pricing, setPricing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [aiBusy, setAiBusy] = useState("");
+  const [aiRes, setAiRes] = useState({});
+  const load = () => {
+    setLoading(true);
+    Promise.all([api.get("/admin/predict/forecast"), api.get("/admin/predict/pricing")])
+      .then(([f, p]) => { setFc(f.data); setPricing(p.data); })
+      .catch(() => {}).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const chartData = fc ? [
+    ...fc.history.map((h) => ({ date: h.date.slice(5), revenue: h.revenue, forecast: null })),
+    ...fc.forecast.map((h) => ({ date: h.date.slice(5), revenue: null, forecast: h.revenue })),
+  ] : [];
+
+  const applyPrice = async (s) => {
+    try { await api.post("/admin/predict/pricing/apply", { product_id: s.id, price: s.suggested_price }); toast.success(`Prix appliqué : ${s.suggested_price}€`); load(); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+  const aiPrice = async (s) => {
+    setAiBusy(s.id);
+    try { const r = await api.post(`/admin/predict/ai-price/${s.id}`); setAiRes((prev) => ({ ...prev, [s.id]: r.data })); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setAiBusy(""); }
+  };
+
+  if (loading) return <p className="text-stone py-16 text-center" data-testid="predict-loading">Chargement des prévisions…</p>;
+
+  const trendColor = { hausse: "text-emerald-700", baisse: "text-brand", stable: "text-stone" };
+
+  return (
+    <div className="space-y-10" data-testid="admin-predict-tab">
+      <div>
+        <p className="font-display font-bold text-lg mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-brand" /> Prévision de chiffre d'affaires ({fc?.horizon} jours)</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-ink/10 border border-ink/10 mb-6">
+          <div className="bg-cream p-5"><p className="text-xs uppercase font-bold text-stone">CA prévu ({fc?.horizon}j)</p><p className="font-display font-black text-2xl mt-1" data-testid="predict-total">{fc?.predicted_total?.toFixed(2)}€</p></div>
+          <div className="bg-cream p-5"><p className="text-xs uppercase font-bold text-stone">Tendance</p><p className={`font-display font-black text-2xl mt-1 capitalize ${trendColor[fc?.trend] || ""}`}>{fc?.trend}</p></div>
+          <div className="bg-cream p-5"><p className="text-xs uppercase font-bold text-stone">Croissance 30j</p><p className="font-display font-black text-2xl mt-1">{fc?.growth_30d > 0 ? "+" : ""}{fc?.growth_30d}%</p></div>
+          <div className="bg-cream p-5"><p className="text-xs uppercase font-bold text-stone">Moy. quotidienne</p><p className="font-display font-black text-2xl mt-1">{fc?.daily_avg_recent?.toFixed(2)}€</p></div>
+        </div>
+        <div className="border border-ink/10 p-4" style={{ height: 300 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="gRev" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1a1a1a" stopOpacity={0.3} /><stop offset="100%" stopColor="#1a1a1a" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gFc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#FF3300" stopOpacity={0.35} /><stop offset="100%" stopColor="#FF3300" stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#0001" />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={Math.ceil(chartData.length / 12)} />
+              <YAxis tick={{ fontSize: 10 }} width={40} />
+              <Tooltip />
+              <Area type="monotone" dataKey="revenue" name="Historique" stroke="#1a1a1a" fill="url(#gRev)" strokeWidth={2} connectNulls />
+              <Area type="monotone" dataKey="forecast" name="Prévision" stroke="#FF3300" fill="url(#gFc)" strokeWidth={2} strokeDasharray="5 4" connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {fc?.demand?.length > 0 && (
+        <div>
+          <p className="font-display font-bold text-lg mb-4">Demande par produit (30j vs 30j précédents)</p>
+          <div className="space-y-2">
+            {fc.demand.map((d, i) => (
+              <div key={i} className="border border-ink/10 p-3 flex items-center gap-4" data-testid={`demand-${i}`}>
+                <span className="font-display font-black text-xl w-6 text-stone">{i + 1}</span>
+                <p className="flex-1 font-medium text-sm truncate">{d.title}</p>
+                <p className="text-stone text-sm">{d.qty_30d} vendus</p>
+                <span className={`text-sm font-bold ${d.growth > 0 ? "text-emerald-700" : d.growth < 0 ? "text-brand" : "text-stone"}`}>{d.growth > 0 ? "+" : ""}{d.growth}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Gauge className="w-5 h-5 text-brand" /> Moteur de prix IA — {pricing?.count} suggestion(s)</p>
+        <p className="text-stone text-sm mb-4">Objectif de marge : {pricing?.target_margin}%. Prix suggérés pour aligner la marge sans dépasser le prix barré.</p>
+        {pricing?.items?.length === 0 && <p className="text-stone">Aucun ajustement nécessaire : vos marges sont conformes. 🎉</p>}
+        <div className="space-y-2">
+          {pricing?.items?.map((s) => (
+            <div key={s.id} className="border border-ink/10 p-4" data-testid={`pricing-${s.id}`}>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex-1 min-w-[160px]">
+                  <p className="font-medium text-sm">{s.title}</p>
+                  <p className="text-stone text-xs">{s.reason} · marge {s.margin_pct}%</p>
+                </div>
+                <div className="text-sm text-stone">{s.price}€ <span className="mx-1">→</span> <span className="font-display font-black text-lg text-ink">{s.suggested_price}€</span> <span className={s.delta > 0 ? "text-emerald-700" : "text-brand"}>({s.delta > 0 ? "+" : ""}{s.delta}€)</span></div>
+                <button onClick={() => applyPrice(s)} className="inline-flex items-center gap-1.5 bg-ink text-cream px-3 py-2 rounded-full text-sm hover:bg-brand transition-colors" data-testid={`pricing-apply-${s.id}`}><CheckCircle2 className="w-4 h-4" /> Appliquer</button>
+                <button onClick={() => aiPrice(s)} disabled={aiBusy === s.id} className="inline-flex items-center gap-1.5 border border-ink/20 px-3 py-2 rounded-full text-sm hover:border-ink transition-colors disabled:opacity-50" data-testid={`pricing-ai-${s.id}`}><Sparkles className="w-4 h-4" /> {aiBusy === s.id ? "…" : "Avis IA"}</button>
+              </div>
+              {aiRes[s.id] && (
+                <div className="mt-3 bg-brand/5 border border-brand/20 p-3 text-sm" data-testid={`pricing-ai-res-${s.id}`}>
+                  <p><b>IA :</b> prix conseillé <b>{aiRes[s.id].recommended_price}€</b> · score {aiRes[s.id].opportunity_score}/100 · {aiRes[s.id].verdict}</p>
+                  {aiRes[s.id].reasons?.length > 0 && <ul className="list-disc pl-5 mt-1 text-stone">{aiRes[s.id].reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

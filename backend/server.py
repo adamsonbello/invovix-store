@@ -35,6 +35,10 @@ import staff as staffmod
 from staff import staff_router
 import twofa as twofamod
 from publicapi import publicapi_router
+from imports import imports_router
+from documents import documents_router
+from predict import predict_router
+from stores import stores_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -851,6 +855,10 @@ app.include_router(marketing_router)
 app.include_router(notif_router)
 app.include_router(staff_router)
 app.include_router(publicapi_router)
+app.include_router(imports_router)
+app.include_router(documents_router)
+app.include_router(predict_router)
+app.include_router(stores_router)
 
 app.add_middleware(
     CORSMiddleware,
