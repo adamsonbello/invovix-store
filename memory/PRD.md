@@ -98,9 +98,24 @@ Objectif utilisateur : transformer la boutique en ERP dropshipping (30 modules).
 - **Dépenses pub** dans Réglages (`ad_spend_30d`) pour ROAS/ROI/bénéfice net.
 - Validation : **26/26 pytest** (`tests/test_erp_phase2.py`) + smoke UI (iteration 6). Bannières newsletter & cookies masquées sur /admin.
 
+## Implemented (2026-06 — Phase 3 CRM & Marketing)
+Modules 10/11/12/16 + fidélité. Livré en 3 lots testés (iteration 7 : 24/24 pytest + 100% front).
+### 3A — CRM + Fidélité + Relance panier abandonné (`crm.py`)
+- **CRM clients** `/api/admin/customers` (+ `/{id}`) : dépensé, commandes, panier moyen, retours, points, palier (Bronze/Argent/Or/Platine), statut (nouveau/actif/VIP), recherche + segments. UI onglet « Marketing & CRM » → sous-onglet Clients (modale fiche).
+- **Fidélité** : 1 pt/€ à chaque commande payée (`accrue_loyalty`, idempotent), paliers par total dépensé. `GET /api/loyalty` + carte fidélité dans l'espace client.
+- **Relance checkout abandonné** : `GET /api/admin/abandoned` (candidats, CA potentiel, relancés, récupérés), relance manuelle `/{id}/remind` + `/run`, boucle auto `_abandoned_cart_loop` (email Brevo `send_abandoned_cart` avec code promo). VÉRIFIÉ.
+### 3B — Campagnes email + Bundles + Ventes flash (`marketing.py`)
+- **Campagnes** `/api/admin/campaigns` (segments newsletter/customers/vip/all, envoi Brevo en background) + `/api/admin/segments/count`. UI sous-onglet Campagnes.
+- **Bundles/Packs** : CRUD `/api/admin/bundles` + public `/api/bundles` (prix pack, économie %). Section « NOS PACKS » sur l'accueil. UI sous-onglet Bundles.
+- **Ventes flash** : CRUD `/api/admin/flash-sales` (scope category/product/all, % + fin) + public `/api/flash-sales/active`. Remise appliquée côté serveur aux `/api/products` ET au checkout (`_build_order`). Bannière compte à rebours + badges flash sur les cartes produit. VÉRIFIÉ (34.90€→27.92€ à -20%).
+### 3C — Notifications multi-canal (`notifications.py`)
+- **Discord & Slack** (webhooks, sans clé) : notif à chaque commande payée (`notify_new_order`), test `/api/admin/notifications/test`. Réglages admin (webhooks + toggle). VÉRIFIÉ.
+- **SMS & WhatsApp (Twilio)** : NON FAIT — nécessite les identifiants Twilio de l'utilisateur (Account SID, Auth Token, numéro).
+- Réglages : `ad_spend_30d`, `discord_webhook_url`, `slack_webhook_url`, `notify_new_order`.
+
 ## Roadmap ERP (phases restantes)
-- **Phase 2 (reste)** : import CSV/Excel/URL (mod 3) — non fait.
-- **Phase 3 — CRM & Marketing** : CRM + fidélité (mod 10), email marketing/panier abandonné (mod 11), notifications multi-canal SMS/WhatsApp/Discord/Slack (mod 12), bundles + ventes flash (mod 16).
+- **Phase 3 (reste)** : Notifications SMS/WhatsApp via Twilio (attente clés) ; push web.
+- **Phase 2 (reste)** : import CSV/Excel/URL de produits (module 3).
 - **Phase 4 — Plateforme & sécurité** : rôles & permissions (mod 20), 2FA/journal/sauvegardes (mod 27), PWA (mod 26), multi-boutiques (mod 19), documents + API publique (mod 24/25).
 - Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → CSV/Excel + import par URL (CJ = pipeline principal).
 
