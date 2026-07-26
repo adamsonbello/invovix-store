@@ -28,6 +28,7 @@ DEFAULT_SETTINGS = {
     "company_address": "",
     "vat_regime": "franchise",         # "franchise" (293 B, sans TVA) | "assujetti"
     "vat_rate": 20.0,
+    "ad_spend_30d": 0.0,               # dépenses publicitaires 30j (saisie manuelle, pour ROAS/ROI)
 }
 
 
@@ -53,6 +54,7 @@ class SettingsInput(BaseModel):
     company_address: str = ""
     vat_regime: str = "franchise"
     vat_rate: float = 20.0
+    ad_spend_30d: float = 0.0
 
 
 @extras_router.get("/settings")

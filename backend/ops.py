@@ -78,6 +78,47 @@ async def analytics(admin: dict = Depends(require_admin)):
     orders_30d = sum(1 for o in paid if (o.get("created_at") or "")[:10] in rev_by_day)
     conversion = round((orders_30d / visits_30d) * 100, 2) if visits_30d else 0.0
 
+    # --- Phase 2 : bénéfice, ROAS, opérations, série mensuelle ---
+    prods = await db.products.find({}, {"_id": 0, "id": 1, "buy_price": 1, "cost_price": 1, "price": 1, "in_stock": 1, "stock_total": 1, "active": 1}).to_list(5000)
+    cost_map = {p["id"]: float(p.get("buy_price") or p.get("cost_price") or 0) for p in prods}
+    total_cost = 0.0
+    revenue_30 = 0.0
+    for o in paid:
+        is_30 = (o.get("created_at") or "") >= since
+        if is_30:
+            revenue_30 += o.get("total", 0)
+        for it in o.get("items", []):
+            c = cost_map.get(it.get("product_id"), 0) * it.get("quantity", 0)
+            total_cost += c
+    gross_profit = round(revenue - total_cost, 2)
+
+    settings = await get_settings_doc()
+    ad_spend = float(settings.get("ad_spend_30d") or 0)
+    net_profit_30d = round(revenue_30 - ad_spend, 2)
+    roas = round(revenue_30 / ad_spend, 2) if ad_spend else 0.0
+    roi = round((revenue_30 - ad_spend) / ad_spend * 100, 1) if ad_spend else 0.0
+
+    out_of_stock = sum(1 for p in prods if p.get("in_stock") is False or p.get("stock_total") == 0)
+    low_stock = sum(1 for p in prods if isinstance(p.get("stock_total"), (int, float)) and 0 < p.get("stock_total") <= 5)
+    to_ship = await db.orders.count_documents({"payment_status": "paid", "status": {"$in": ["processing", "paid"]}})
+    unresolved_alerts = await db.alerts.count_documents({"resolved": False})
+
+    # 12-month revenue series
+    months = []
+    ref = _today().replace(day=1)
+    for i in range(11, -1, -1):
+        y = ref.year
+        m = ref.month - i
+        while m <= 0:
+            m += 12; y -= 1
+        months.append(f"{y}-{m:02d}")
+    rev_by_month = {mo: 0.0 for mo in months}
+    for o in paid:
+        mo = (o.get("created_at") or "")[:7]
+        if mo in rev_by_month:
+            rev_by_month[mo] += o.get("total", 0)
+    revenue_monthly = [{"month": mo, "revenue": round(rev_by_month[mo], 2)} for mo in months]
+
     return {
         "revenue": revenue,
         "paid_orders": paid_count,
@@ -85,11 +126,22 @@ async def analytics(admin: dict = Depends(require_admin)):
         "total_orders": await db.orders.count_documents({}),
         "status_breakdown": statuses,
         "revenue_series": revenue_series,
+        "revenue_monthly": revenue_monthly,
         "top_products": top_products,
         "new_customers_30d": new_customers,
         "total_customers": total_customers,
         "visits_30d": visits_30d,
         "conversion_rate": conversion,
+        "gross_profit": gross_profit,
+        "revenue_30d": round(revenue_30, 2),
+        "ad_spend_30d": ad_spend,
+        "net_profit_30d": net_profit_30d,
+        "roas": roas,
+        "roi": roi,
+        "out_of_stock": out_of_stock,
+        "low_stock": low_stock,
+        "to_ship": to_ship,
+        "unresolved_alerts": unresolved_alerts,
     }
 
 

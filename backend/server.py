@@ -24,7 +24,8 @@ import fulfillment as fulfillmod
 from payments import payments_router
 from extras import extras_router, validate_promo, seed_extras
 from ops import ops_router
-from ai import ai_router
+from ai import ai_router, optimize_product_core
+from erp import erp_router, run_rules
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -96,6 +97,16 @@ class ProductInput(BaseModel):
     compare_at_price: Optional[float] = 0.0
     currency: str = "EUR"
     category: str = "smart-home"
+    subcategory: Optional[str] = ""
+    brand: Optional[str] = ""
+    sku: Optional[str] = ""
+    ean: Optional[str] = ""
+    buy_price: Optional[float] = 0.0
+    weight: Optional[float] = 0.0
+    dimensions: Optional[str] = ""
+    supplier_id: Optional[str] = ""
+    supplier_url: Optional[str] = ""
+    video_url: Optional[str] = ""
     images: List[str] = []
     stock: int = 100
     featured: bool = False
@@ -140,6 +151,7 @@ class BulkImportInput(BaseModel):
     pids: List[str]
     margin: float = 60
     category: str = "smart-home"
+    optimize: bool = False
 
 
 class ContactInput(BaseModel):
@@ -678,11 +690,11 @@ async def _do_import(pid: str, margin: float, category: str, featured: bool = Fa
     product["featured"] = featured
     product["images"] = await _localize_images(product.get("images", []), product["id"])
     await db.products.insert_one(product)
-    return {"pid": pid, "status": "imported", "title": product["title"], "price": product["price"]}
+    return {"pid": pid, "status": "imported", "id": product["id"], "title": product["title"], "price": product["price"]}
 
 
 @api.post("/admin/cj/import/{pid}")
-async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: float = 60, category: str = "smart-home", featured: bool = False):
+async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: float = 60, category: str = "smart-home", featured: bool = False, optimize: bool = False):
     if not cjmod.cj_configured():
         raise HTTPException(503, "Clé API CJDropshipping non configurée")
     try:
@@ -691,6 +703,13 @@ async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: floa
         raise HTTPException(502, f"Erreur import CJ: {e}")
     if res["status"] == "skipped":
         raise HTTPException(400, "Ce produit est déjà importé")
+    if optimize and res.get("id"):
+        try:
+            opt = await optimize_product_core(res["id"], rewrite=True, image=False, score=True)
+            res["optimized"] = opt.get("done", [])
+        except Exception as e:
+            logger.error(f"auto-optimize error: {e}")
+            res["optimized"] = []
     return res
 
 
@@ -703,7 +722,15 @@ async def cj_import_bulk(body: BulkImportInput, admin: dict = Depends(require_ad
         if i > 0:
             await asyncio.sleep(1.2)
         try:
-            results.append(await _do_import(pid, body.margin, body.category))
+            r = await _do_import(pid, body.margin, body.category)
+            if body.optimize and r.get("status") == "imported" and r.get("id"):
+                try:
+                    opt = await optimize_product_core(r["id"], rewrite=True, image=False, score=True)
+                    r["optimized"] = opt.get("done", [])
+                except Exception as oe:
+                    logger.error(f"auto-optimize error: {oe}")
+                    r["optimized"] = []
+            results.append(r)
         except Exception as e:
             results.append({"pid": pid, "status": "error", "reason": str(e)})
     return {
@@ -772,6 +799,7 @@ app.include_router(payments_router)
 app.include_router(extras_router)
 app.include_router(ops_router)
 app.include_router(ai_router)
+app.include_router(erp_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -884,6 +912,7 @@ async def _stock_sync_loop():
     while True:
         try:
             await _sync_all_stock()
+            await run_rules()
         except Exception as e:
             logger.error(f"stock sync loop error: {e}")
         await asyncio.sleep(interval)

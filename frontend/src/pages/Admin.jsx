@@ -47,6 +47,8 @@ export default function Admin() {
             { key: "products", label: t.admin.tabProducts },
             { key: "orders", label: t.admin.tabOrders },
             { key: "returns", label: t.admin.tabReturns },
+            { key: "suppliers", label: "Fournisseurs" },
+            { key: "rules", label: "Règles & Alertes" },
             { key: "cj", label: t.admin.tabCj },
             { key: "blog", label: t.admin.tabBlog },
             { key: "messages", label: t.admin.tabMessages },
@@ -69,6 +71,8 @@ export default function Admin() {
         {tab === "products" && <ProductsTab onChange={loadStats} />}
         {tab === "orders" && <OrdersTab />}
         {tab === "returns" && <ReturnsTab />}
+        {tab === "suppliers" && <SuppliersTab />}
+        {tab === "rules" && <RulesTab />}
         {tab === "cj" && <CjTab onImport={loadStats} />}
         {tab === "blog" && <BlogTab />}
         {tab === "messages" && <MessagesTab />}
@@ -368,7 +372,7 @@ function AiAssistantPanel() {
   );
 }
 
-const EMPTY = { title: "", title_en: "", price: "", compare_at_price: "", category: "smart-home", images: "", description: "", description_en: "", featured: false };
+const EMPTY = { title: "", title_en: "", price: "", compare_at_price: "", category: "smart-home", subcategory: "", brand: "", sku: "", ean: "", buy_price: "", weight: "", dimensions: "", supplier_id: "", supplier_url: "", video_url: "", images: "", description: "", description_en: "", featured: false };
 
 function ProductsTab({ onChange }) {
   const { t } = useI18n();
@@ -376,14 +380,15 @@ function ProductsTab({ onChange }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [suppliers, setSuppliers] = useState([]);
 
   const load = () => api.get("/products?size=100").then((r) => setProducts(r.data.items));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get("/admin/suppliers").then((r) => setSuppliers(r.data.items)).catch(() => {}); }, []);
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setShowForm(true); };
   const openEdit = (p) => {
     setEditing(p.id);
-    setForm({ ...p, price: p.price, compare_at_price: p.compare_at_price || "", images: (p.images || []).join(", ") });
+    setForm({ ...EMPTY, ...p, price: p.price, compare_at_price: p.compare_at_price || "", buy_price: p.buy_price || p.cost_price || "", images: (p.images || []).join(", ") });
     setShowForm(true);
   };
 
@@ -397,6 +402,16 @@ function ProductsTab({ onChange }) {
       price: parseFloat(form.price),
       compare_at_price: form.compare_at_price ? parseFloat(form.compare_at_price) : 0,
       category: form.category,
+      subcategory: form.subcategory || "",
+      brand: form.brand || "",
+      sku: form.sku || "",
+      ean: form.ean || "",
+      buy_price: form.buy_price ? parseFloat(form.buy_price) : 0,
+      weight: form.weight ? parseFloat(form.weight) : 0,
+      dimensions: form.dimensions || "",
+      supplier_id: form.supplier_id || "",
+      supplier_url: form.supplier_url || "",
+      video_url: form.video_url || "",
       images: form.images.split(",").map((s) => s.trim()).filter(Boolean),
       featured: !!form.featured,
       stock: 100,
@@ -431,6 +446,45 @@ function ProductsTab({ onChange }) {
     finally { setSyncing(false); }
   };
 
+  const [aiBusy, setAiBusy] = useState("");
+  const optimizeOne = async (id) => {
+    setAiBusy(id);
+    try {
+      const r = await api.post(`/admin/ai/optimize-product/${id}`, { rewrite: true, image: false, score: true });
+      toast.success(`Optimisé (${(r.data.done || []).join(", ")})`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setAiBusy(""); }
+  };
+
+  // AI helpers inside the product form
+  const [formAi, setFormAi] = useState("");
+  const aiRewriteForm = async () => {
+    if (!form.title) { toast.error("Renseignez un titre d'abord"); return; }
+    setFormAi("rewrite");
+    try {
+      const r = await api.post("/admin/ai/rewrite-product", {
+        title: form.title,
+        description: (form.description || "").replace(/<[^>]+>/g, " ").slice(0, 800),
+        category: form.category,
+      });
+      const d = r.data;
+      setForm((f) => ({ ...f, title: d.title || f.title, title_en: d.title_en || f.title_en, description: d.description || f.description, description_en: d.description_en || f.description_en }));
+      toast.success("Fiche optimisée par l'IA");
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setFormAi(""); }
+  };
+  const aiImageForm = async () => {
+    if (!form.title) { toast.error("Renseignez un titre d'abord"); return; }
+    setFormAi("image");
+    try {
+      const r = await api.post("/admin/ai/generate-image", { prompt: form.title, style: "white", use_reference: false });
+      setForm((f) => ({ ...f, images: f.images ? `${f.images}, ${r.data.url}` : r.data.url }));
+      toast.success("Image IA ajoutée");
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setFormAi(""); }
+  };
+
   return (
     <div data-testid="admin-products-tab">
       <div className="flex justify-end gap-3 mb-6">
@@ -448,8 +502,15 @@ function ProductsTab({ onChange }) {
             <img src={p.images?.[0]} alt={p.title} className="w-14 h-16 object-cover bg-[#f0efed]" />
             <div className="flex-1 min-w-0">
               <p className="font-medium truncate">{p.title}</p>
-              <p className="text-stone text-sm">{p.category} · {p.price.toFixed(2)}€ {p.featured && `· ${t.admin.featured}`}</p>
+              <p className="text-stone text-sm">
+                {p.category} · {p.price.toFixed(2)}€ {p.featured && `· ${t.admin.featured}`}
+                {p.ai_score?.opportunity_score != null && <span className="ml-2 inline-block bg-brand/10 text-brand px-2 py-0.5 rounded text-xs font-bold" data-testid={`ai-score-badge-${p.id}`}>IA {p.ai_score.opportunity_score}/100</span>}
+                {p.ai_optimized && <span className="ml-1 inline-block text-green-600 text-xs">✨ optimisé</span>}
+              </p>
             </div>
+            <button onClick={() => optimizeOne(p.id)} disabled={aiBusy === p.id} className="inline-flex items-center gap-1.5 text-sm border border-ink/20 rounded-full px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`ai-optimize-${p.id}`}>
+              <Sparkles className="w-3.5 h-3.5" /> {aiBusy === p.id ? "…" : "IA"}
+            </button>
             <button onClick={() => openEdit(p)} className="text-sm text-stone hover:text-ink px-3" data-testid={`edit-${p.id}`}>{t.admin.edit}</button>
             <button onClick={() => del(p.id)} className="text-brand hover:opacity-70 p-2" data-testid={`delete-${p.id}`}><Trash2 className="w-4 h-4" /></button>
           </div>
@@ -472,6 +533,25 @@ function ProductsTab({ onChange }) {
               <In label={t.admin.ptitle + " (EN)"} value={form.title_en} onChange={(v) => setForm({ ...form, title_en: v })} span2 />
               <In label={t.admin.pprice} type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} required />
               <In label={t.admin.pcompare} type="number" value={form.compare_at_price} onChange={(v) => setForm({ ...form, compare_at_price: v })} />
+              <In label="Prix d'achat (€)" type="number" value={form.buy_price} onChange={(v) => setForm({ ...form, buy_price: v })} />
+              <div className="flex items-end pb-3">
+                <p className="text-sm" data-testid="form-margin">Marge : <span className="font-bold text-brand">{form.price && form.buy_price ? `${(((parseFloat(form.price) - parseFloat(form.buy_price)) / parseFloat(form.price)) * 100).toFixed(1)}%` : "—"}</span></p>
+              </div>
+              <In label="Marque" value={form.brand} onChange={(v) => setForm({ ...form, brand: v })} />
+              <In label="Sous-catégorie" value={form.subcategory} onChange={(v) => setForm({ ...form, subcategory: v })} />
+              <In label="SKU" value={form.sku} onChange={(v) => setForm({ ...form, sku: v })} />
+              <In label="EAN / code-barres" value={form.ean} onChange={(v) => setForm({ ...form, ean: v })} />
+              <In label="Poids (kg)" type="number" value={form.weight} onChange={(v) => setForm({ ...form, weight: v })} />
+              <In label="Dimensions (LxlxH)" value={form.dimensions} onChange={(v) => setForm({ ...form, dimensions: v })} />
+              <div>
+                <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Fournisseur</label>
+                <select value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="form-supplier">
+                  <option value="">— Aucun —</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <In label="URL fournisseur" value={form.supplier_url} onChange={(v) => setForm({ ...form, supplier_url: v })} />
+              <In label="URL vidéo" value={form.video_url} onChange={(v) => setForm({ ...form, video_url: v })} span2 />
               <div>
                 <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.pcat}</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="form-category">
@@ -492,7 +572,15 @@ function ProductsTab({ onChange }) {
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="form-desc" />
               </div>
             </div>
-            <button type="submit" className="w-full mt-6 bg-brand text-white py-4 rounded-full font-medium hover:bg-ink transition-colors" data-testid="save-product-btn">{t.admin.save}</button>
+            <div className="flex flex-wrap gap-3 mt-6">
+              <button type="button" onClick={aiRewriteForm} disabled={!!formAi} className="inline-flex items-center gap-2 border border-ink/20 px-4 py-2.5 rounded-full text-sm font-medium hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid="form-ai-rewrite-btn">
+                <Wand2 className="w-4 h-4" /> {formAi === "rewrite" ? "Optimisation…" : t.admin.aiRewriteBtn}
+              </button>
+              <button type="button" onClick={aiImageForm} disabled={!!formAi} className="inline-flex items-center gap-2 border border-ink/20 px-4 py-2.5 rounded-full text-sm font-medium hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid="form-ai-image-btn">
+                <ImagePlus className="w-4 h-4" /> {formAi === "image" ? "Génération (≈20s)…" : t.admin.aiImageBtn}
+              </button>
+            </div>
+            <button type="submit" className="w-full mt-4 bg-brand text-white py-4 rounded-full font-medium hover:bg-ink transition-colors" data-testid="save-product-btn">{t.admin.save}</button>
           </motion.form>
         </div>
       )}
@@ -585,6 +673,7 @@ function CjTab({ onImport }) {
   const [category, setCategory] = useState("smart-home");
   const [importedPids, setImportedPids] = useState({});
   const [busy, setBusy] = useState(false);
+  const [autoOptimize, setAutoOptimize] = useState(false);
 
   useEffect(() => {
     api.get("/admin/cj/status").then((r) => setConfigured(r.data.configured)).catch(() => setConfigured(false));
@@ -605,9 +694,9 @@ function CjTab({ onImport }) {
   const importOne = async (pid) => {
     setImportedPids((s) => ({ ...s, [pid]: "loading" }));
     try {
-      const r = await api.post(`/admin/cj/import/${pid}?margin=${Number(margin)}&category=${category}`);
+      const r = await api.post(`/admin/cj/import/${pid}?margin=${Number(margin)}&category=${category}&optimize=${autoOptimize}`);
       setImportedPids((s) => ({ ...s, [pid]: "done" }));
-      toast.success(`${t.admin.imported}: ${(r.data.title || "").slice(0, 28)} · ${r.data.price}€`);
+      toast.success(`${t.admin.imported}: ${(r.data.title || "").slice(0, 28)} · ${r.data.price}€${autoOptimize ? " · ✨ IA" : ""}`);
       onImport();
     } catch (e) {
       setImportedPids((s) => ({ ...s, [pid]: undefined }));
@@ -620,7 +709,7 @@ function CjTab({ onImport }) {
     if (!pids.length) return;
     setBusy(true);
     try {
-      const r = await api.post(`/admin/cj/import-bulk`, { pids, margin: Number(margin), category });
+      const r = await api.post(`/admin/cj/import-bulk`, { pids, margin: Number(margin), category, optimize: autoOptimize });
       const done = {};
       (r.data.results || []).forEach((x) => {
         if (x.status === "imported" || x.status === "skipped") done[x.pid] = "done";
@@ -682,6 +771,10 @@ function CjTab({ onImport }) {
             <option value="security">security</option>
           </select>
         </div>
+        <label className="flex items-center gap-2 font-medium text-sm pb-2.5 cursor-pointer" title="Réécrit la fiche + calcule un score IA à chaque import">
+          <input type="checkbox" checked={autoOptimize} onChange={(e) => setAutoOptimize(e.target.checked)} className="accent-brand w-4 h-4" data-testid="cj-auto-optimize" />
+          <Sparkles className="w-4 h-4 text-brand" /> Optimiser à l'import (IA)
+        </label>
         {results.length > 0 && (
           <button
             onClick={importAll}
@@ -952,6 +1045,7 @@ function SettingsTab() {
         company_address: s.company_address,
         vat_regime: s.vat_regime,
         vat_rate: Number(s.vat_rate) || 0,
+        ad_spend_30d: Number(s.ad_spend_30d) || 0,
       });
       toast.success(t.admin.settingsSaved);
     } catch (err) {
@@ -991,6 +1085,15 @@ function SettingsTab() {
         <div>
           <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.bannerTextEn}</label>
           <input value={s.banner_text_en} onChange={(e) => setS({ ...s, banner_text_en: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-banner-text-en" />
+        </div>
+      </div>
+
+      <div className="border border-ink/10 p-6 space-y-4">
+        <p className="font-display font-bold text-lg">Marketing & rentabilité</p>
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Dépenses publicitaires — 30 derniers jours (€)</label>
+          <input type="number" step="any" value={s.ad_spend_30d ?? 0} onChange={(e) => setS({ ...s, ad_spend_30d: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-ad-spend" />
+          <p className="text-stone text-xs mt-1">Utilisé pour calculer le ROAS, le ROI et le bénéfice net dans Analytics.</p>
         </div>
       </div>
 
@@ -1065,11 +1168,41 @@ function AnalyticsTab() {
 
   return (
     <div data-testid="admin-analytics-tab">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-10">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         {kpis.map((k) => (
           <div key={k.key} className="bg-surface p-5" data-testid={`kpi-${k.key}`}>
             <p className="text-xs tracking-[0.12em] uppercase font-bold text-stone">{k.label}</p>
             <p className="font-display font-black text-2xl mt-2">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        {[
+          { key: "gross-profit", label: "Bénéfice brut", value: `${(d.gross_profit ?? 0).toFixed(2)}€`, accent: true },
+          { key: "revenue-30d", label: "CA (30j)", value: `${(d.revenue_30d ?? 0).toFixed(2)}€` },
+          { key: "net-profit", label: "Bénéfice net (30j)", value: `${(d.net_profit_30d ?? 0).toFixed(2)}€`, accent: true },
+          { key: "ad-spend", label: "Dépenses pub (30j)", value: `${(d.ad_spend_30d ?? 0).toFixed(2)}€` },
+          { key: "roas", label: "ROAS", value: `${d.roas ?? 0}x` },
+          { key: "roi", label: "ROI", value: `${d.roi ?? 0}%` },
+        ].map((k) => (
+          <div key={k.key} className={`p-5 ${k.accent ? "bg-ink text-cream" : "bg-surface"}`} data-testid={`kpi-${k.key}`}>
+            <p className={`text-xs tracking-[0.12em] uppercase font-bold ${k.accent ? "text-cream/70" : "text-stone"}`}>{k.label}</p>
+            <p className="font-display font-black text-2xl mt-2">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
+        {[
+          { key: "to-ship", label: "Commandes à expédier", value: d.to_ship ?? 0, warn: (d.to_ship ?? 0) > 0 },
+          { key: "out-of-stock", label: "Produits en rupture", value: d.out_of_stock ?? 0, warn: (d.out_of_stock ?? 0) > 0 },
+          { key: "low-stock", label: "Stock faible", value: d.low_stock ?? 0, warn: (d.low_stock ?? 0) > 0 },
+          { key: "alerts", label: "Alertes actives", value: d.unresolved_alerts ?? 0, warn: (d.unresolved_alerts ?? 0) > 0 },
+        ].map((k) => (
+          <div key={k.key} className={`border p-4 text-center ${k.warn ? "border-brand bg-brand/5" : "border-ink/10"}`} data-testid={`ops-${k.key}`}>
+            <p className={`font-display font-black text-2xl ${k.warn ? "text-brand" : ""}`}>{k.value}</p>
+            <p className="text-xs text-stone uppercase tracking-wide mt-1">{k.label}</p>
           </div>
         ))}
       </div>
@@ -1118,6 +1251,201 @@ function AnalyticsTab() {
             <p className="text-xs text-stone uppercase tracking-wide">{s}</p>
           </div>
         ))}
+      </div>
+
+      {d.revenue_monthly && (
+        <div className="border border-ink/10 p-5 mt-8" data-testid="chart-monthly">
+          <p className="font-display font-bold text-lg mb-4">Chiffre d'affaires par mois (12 mois)</p>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={d.revenue_monthly} margin={{ left: -12, right: 8, top: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e2dd" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} tickFormatter={(v) => v.slice(2)} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Bar dataKey="revenue" fill="#ff3300" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_SUPPLIER = { name: "", contact_email: "", contact_phone: "", website: "", country: "", avg_delay_days: "", quality_rating: "", shipping_cost: "", notes: "" };
+
+function SuppliersTab() {
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState(EMPTY_SUPPLIER);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = () => api.get("/admin/suppliers").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const num = (v) => (v === "" || v === null ? 0 : Number(v));
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name) { toast.error("Nom requis"); return; }
+    setSaving(true);
+    const payload = { ...form, avg_delay_days: num(form.avg_delay_days), quality_rating: num(form.quality_rating), shipping_cost: num(form.shipping_cost) };
+    try {
+      if (editing) await api.put(`/admin/suppliers/${editing}`, payload);
+      else await api.post("/admin/suppliers", payload);
+      toast.success("Fournisseur enregistré");
+      setForm(EMPTY_SUPPLIER); setEditing(null); load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setSaving(false); }
+  };
+  const edit = (s) => { setEditing(s.id); setForm({ ...EMPTY_SUPPLIER, ...s }); };
+  const del = async (id) => { await api.delete(`/admin/suppliers/${id}`); load(); toast.success("Supprimé"); };
+
+  const sorted = [...items].sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8" data-testid="admin-suppliers-tab">
+      <form onSubmit={save} className="space-y-3 border border-ink/10 p-5 h-fit">
+        <p className="font-display font-bold text-lg mb-2">{editing ? "Modifier le fournisseur" : "Nouveau fournisseur"}</p>
+        <In label="Nom" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+        <In label="Email" value={form.contact_email} onChange={(v) => setForm({ ...form, contact_email: v })} />
+        <In label="Téléphone" value={form.contact_phone} onChange={(v) => setForm({ ...form, contact_phone: v })} />
+        <In label="Site web" value={form.website} onChange={(v) => setForm({ ...form, website: v })} />
+        <In label="Pays" value={form.country} onChange={(v) => setForm({ ...form, country: v })} />
+        <In label="Délai moyen (jours)" type="number" value={form.avg_delay_days} onChange={(v) => setForm({ ...form, avg_delay_days: v })} />
+        <In label="Qualité (0-5)" type="number" value={form.quality_rating} onChange={(v) => setForm({ ...form, quality_rating: v })} />
+        <In label="Frais de port (€)" type="number" value={form.shipping_cost} onChange={(v) => setForm({ ...form, shipping_cost: v })} />
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Notes</label>
+          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="supplier-notes" />
+        </div>
+        <button type="submit" disabled={saving} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="supplier-save-btn">{saving ? "…" : "Enregistrer"}</button>
+        {editing && <button type="button" onClick={() => { setEditing(null); setForm(EMPTY_SUPPLIER); }} className="w-full border border-ink/20 py-2.5 rounded-full text-sm">Annuler</button>}
+      </form>
+
+      <div className="lg:col-span-2">
+        <p className="font-display font-bold text-lg mb-4">Comparateur de fournisseurs (par score)</p>
+        {sorted.length === 0 && <p className="text-stone">Aucun fournisseur. Ajoutez-en un.</p>}
+        <div className="space-y-3">
+          {sorted.map((s, i) => (
+            <div key={s.id} className="border border-ink/10 p-4 flex flex-wrap items-center gap-4" data-testid={`supplier-${s.id}`}>
+              <span className="font-display font-black text-2xl w-8 text-stone">{i + 1}</span>
+              <div className="flex-1 min-w-[150px]">
+                <p className="font-medium">{s.name} {s.country && <span className="text-stone text-sm">· {s.country}</span>}</p>
+                <p className="text-stone text-sm">Délai {s.avg_delay_days || 0}j · Qualité {s.quality_rating || 0}/5 · Port {(s.shipping_cost || 0)}€ · {s.product_count || 0} produits</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase text-stone font-bold">Score</p>
+                <p className="font-display font-black text-2xl text-brand" data-testid={`supplier-score-${s.id}`}>{s.score}</p>
+              </div>
+              <button onClick={() => edit(s)} className="text-sm text-stone hover:text-ink px-2" data-testid={`supplier-edit-${s.id}`}>Modifier</button>
+              <button onClick={() => del(s.id)} className="text-brand hover:opacity-70 p-2" data-testid={`supplier-delete-${s.id}`}><Trash2 className="w-4 h-4" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_RULE = { name: "", active: true, cond_type: "out_of_stock", cond_value: "", action_type: "alert", action_value: "" };
+const COND_LABELS = { out_of_stock: "En rupture de stock", low_stock: "Stock ≤ seuil", low_margin: "Marge < seuil %" };
+const ACTION_LABELS = { alert: "Créer une alerte", hide: "Masquer le produit", set_margin: "Ajuster le prix (marge cible %)" };
+
+function RulesTab() {
+  const [rules, setRules] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [form, setForm] = useState(EMPTY_RULE);
+  const [busy, setBusy] = useState(false);
+  const loadRules = () => api.get("/admin/rules").then((r) => setRules(r.data.items)).catch(() => {});
+  const loadAlerts = () => api.get("/admin/alerts").then((r) => setAlerts(r.data.items)).catch(() => {});
+  useEffect(() => { loadRules(); loadAlerts(); }, []);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name) { toast.error("Nom requis"); return; }
+    try {
+      await api.post("/admin/rules", { ...form, cond_value: Number(form.cond_value) || 0, action_value: Number(form.action_value) || 0 });
+      toast.success("Règle créée"); setForm(EMPTY_RULE); loadRules();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const toggle = async (r) => { await api.put(`/admin/rules/${r.id}`, { ...r, active: !r.active }); loadRules(); };
+  const del = async (id) => { await api.delete(`/admin/rules/${id}`); loadRules(); };
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post("/admin/rules/run");
+      toast.success(`Règles exécutées : ${r.data.matches} correspondances · ${r.data.alerts} alertes · ${r.data.hidden} masqués · ${r.data.repriced} reprix`);
+      loadAlerts();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+  const resolve = async (id) => { await api.put(`/admin/alerts/${id}/resolve`); loadAlerts(); };
+  const clearAll = async () => { await api.post("/admin/alerts/clear"); loadAlerts(); };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="admin-rules-tab">
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-display font-bold text-lg">Moteur de règles (no-code)</p>
+          <button onClick={run} disabled={busy} className="inline-flex items-center gap-2 bg-ink text-cream px-4 py-2 rounded-full text-sm font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="rules-run-btn">
+            {busy ? "…" : "Exécuter maintenant"}
+          </button>
+        </div>
+        <form onSubmit={save} className="border border-ink/10 p-5 space-y-3 mb-6">
+          <In label="Nom de la règle" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs uppercase font-bold text-stone mb-2 block">SI (condition)</label>
+              <select value={form.cond_type} onChange={(e) => setForm({ ...form, cond_type: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="rule-cond-type">
+                {Object.entries(COND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            {form.cond_type !== "out_of_stock" && <In label="Seuil" type="number" value={form.cond_value} onChange={(v) => setForm({ ...form, cond_value: v })} />}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs uppercase font-bold text-stone mb-2 block">ALORS (action)</label>
+              <select value={form.action_type} onChange={(e) => setForm({ ...form, action_type: e.target.value })} className="w-full px-3 py-2.5 border border-ink/20 bg-transparent outline-none" data-testid="rule-action-type">
+                {Object.entries(ACTION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            {form.action_type === "set_margin" && <In label="Marge cible (%)" type="number" value={form.action_value} onChange={(v) => setForm({ ...form, action_value: v })} />}
+          </div>
+          <button type="submit" className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors" data-testid="rule-save-btn">Ajouter la règle</button>
+        </form>
+        <div className="space-y-2">
+          {rules.length === 0 && <p className="text-stone text-sm">Aucune règle définie.</p>}
+          {rules.map((r) => (
+            <div key={r.id} className="border border-ink/10 p-3 flex items-center gap-3" data-testid={`rule-${r.id}`}>
+              <button onClick={() => toggle(r)} className={`w-10 h-6 rounded-full transition-colors ${r.active ? "bg-brand" : "bg-ink/20"}`} data-testid={`rule-toggle-${r.id}`}>
+                <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${r.active ? "translate-x-4" : "translate-x-0.5"}`} />
+              </button>
+              <div className="flex-1">
+                <p className="font-medium text-sm">{r.name}</p>
+                <p className="text-stone text-xs">{COND_LABELS[r.cond_type]}{r.cond_type !== "out_of_stock" ? ` (${r.cond_value})` : ""} → {ACTION_LABELS[r.action_type]}{r.action_type === "set_margin" ? ` (${r.action_value}%)` : ""}</p>
+              </div>
+              <button onClick={() => del(r.id)} className="text-brand hover:opacity-70 p-1" data-testid={`rule-delete-${r.id}`}><Trash2 className="w-4 h-4" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-display font-bold text-lg">Alertes ({alerts.length})</p>
+          {alerts.length > 0 && <button onClick={clearAll} className="text-sm text-stone hover:text-ink" data-testid="alerts-clear-btn">Tout marquer résolu</button>}
+        </div>
+        {alerts.length === 0 && <p className="text-stone text-sm">Aucune alerte active. 🎉</p>}
+        <div className="space-y-2">
+          {alerts.map((a) => (
+            <div key={a.id} className="border border-brand/30 bg-brand/5 p-3 flex items-start gap-3" data-testid={`alert-${a.id}`}>
+              <span className="text-brand text-lg leading-none">•</span>
+              <div className="flex-1">
+                <p className="text-sm">{a.message}</p>
+                <p className="text-stone text-xs mt-0.5">{new Date(a.created_at).toLocaleString()}</p>
+              </div>
+              <button onClick={() => resolve(a.id)} className="text-xs border border-ink/20 rounded-full px-3 py-1 hover:border-ink" data-testid={`alert-resolve-${a.id}`}>Résoudre</button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

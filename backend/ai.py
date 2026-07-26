@@ -78,6 +78,13 @@ class RewriteInput(BaseModel):
 
 @ai_router.post("/admin/ai/rewrite-product")
 async def rewrite_product(body: RewriteInput, admin: dict = Depends(require_admin)):
+    data = await run_rewrite(body.title, body.description, body.category, body.keywords_hint, body.model)
+    if not data:
+        raise HTTPException(502, "Réponse IA illisible, réessayez")
+    return data
+
+
+async def run_rewrite(title: str, description: str = "", category: str = "", keywords_hint: str = "", model: Optional[str] = None) -> dict:
     system = (
         "Tu es un expert copywriting e-commerce et SEO pour une boutique de domotique "
         "et matériel de télétravail (marque Invovix). Tu écris un contenu premium, "
@@ -85,10 +92,10 @@ async def rewrite_product(body: RewriteInput, admin: dict = Depends(require_admi
         "sans texte autour."
     )
     prompt = f"""Optimise cette fiche produit. Produit brut :
-Titre: {body.title}
-Description: {body.description or "(vide)"}
-Catégorie: {body.category or "domotique"}
-Mots-clés souhaités: {body.keywords_hint or "(aucun)"}
+Titre: {title}
+Description: {description or "(vide)"}
+Catégorie: {category or "domotique"}
+Mots-clés souhaités: {keywords_hint or "(aucun)"}
 
 Renvoie STRICTEMENT ce JSON :
 {{
@@ -102,11 +109,8 @@ Renvoie STRICTEMENT ce JSON :
   "keywords": ["8 mots-clés SEO FR pertinents"],
   "faq": [{{"q": "question client FR", "a": "réponse FR"}}, "3 à 5 entrées"]
 }}"""
-    raw = await _llm_text(system, prompt, body.model)
-    data = _parse_json(raw)
-    if not data:
-        raise HTTPException(502, "Réponse IA illisible, réessayez")
-    return data
+    raw = await _llm_text(system, prompt, model)
+    return _parse_json(raw)
 
 
 # ----------------------------- 2. Génération d'images IA (Nano Banana) -----------------------------
@@ -127,36 +131,39 @@ class GenImageInput(BaseModel):
 
 @ai_router.post("/admin/ai/generate-image")
 async def generate_image(body: GenImageInput, admin: dict = Depends(require_admin)):
-    _require_key()
     product = None
     if body.product_id:
         product = await db.products.find_one({"id": body.product_id}, {"_id": 0})
         if not product:
             raise HTTPException(404, "Produit introuvable")
-
-    style_txt = STYLE_PROMPTS.get(body.style, STYLE_PROMPTS["lifestyle"])
     subject = body.prompt or (product.get("title") if product else "")
     if not subject:
         raise HTTPException(400, "Fournir un product_id ou un prompt")
-    full_prompt = f"{style_txt}\n\nProduit : {subject}. Aucun texte artificiel ou watermark. Image seule."
+    url = await run_generate_image(subject, body.style, product if body.use_reference else None)
+    if product and body.product_id:
+        imgs = product.get("images") or []
+        imgs.append(url)
+        await db.products.update_one({"id": body.product_id}, {"$set": {"images": imgs}})
+    return {"url": url, "style": body.style}
 
-    # référence image (édition) si dispo
+
+async def run_generate_image(subject: str, style: str = "lifestyle", ref_product: Optional[dict] = None) -> str:
+    _require_key()
+    style_txt = STYLE_PROMPTS.get(style, STYLE_PROMPTS["lifestyle"])
+    full_prompt = f"{style_txt}\n\nProduit : {subject}. Aucun texte artificiel ou watermark. Image seule."
     file_contents = None
-    if body.use_reference and product and product.get("images"):
-        ref = product["images"][0]
-        local = None
+    if ref_product and ref_product.get("images"):
+        ref = ref_product["images"][0]
         if ref.startswith("/products/"):
             local = os.path.join(PUBLIC_PRODUCTS_DIR, os.path.basename(ref))
-        if local and os.path.exists(local):
-            with open(local, "rb") as f:
-                file_contents = [ImageContent(base64.b64encode(f.read()).decode("utf-8"))]
-
+            if os.path.exists(local):
+                with open(local, "rb") as f:
+                    file_contents = [ImageContent(base64.b64encode(f.read()).decode("utf-8"))]
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=f"img-{uuid.uuid4().hex[:12]}",
         system_message="You are a product photography and marketing image generator.",
     ).with_model("gemini", IMAGE_MODEL).with_params(modalities=["image", "text"])
-
     msg = UserMessage(text=full_prompt, file_contents=file_contents) if file_contents else UserMessage(text=full_prompt)
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
@@ -165,18 +172,11 @@ async def generate_image(body: GenImageInput, admin: dict = Depends(require_admi
         raise HTTPException(502, f"Erreur génération image: {e}")
     if not images:
         raise HTTPException(502, "Aucune image générée")
-
     os.makedirs(PUBLIC_PRODUCTS_DIR, exist_ok=True)
     fname = f"ai_{uuid.uuid4().hex}.png"
     with open(os.path.join(PUBLIC_PRODUCTS_DIR, fname), "wb") as f:
         f.write(base64.b64decode(images[0]["data"]))
-    url = f"/products/{fname}"
-
-    if product and body.product_id:
-        imgs = product.get("images") or []
-        imgs.append(url)
-        await db.products.update_one({"id": body.product_id}, {"$set": {"images": imgs}})
-    return {"url": url, "style": body.style}
+    return f"/products/{fname}"
 
 
 # ----------------------------- 3. Scoring produit gagnant -----------------------------
@@ -191,20 +191,27 @@ class ScoreInput(BaseModel):
 
 @ai_router.post("/admin/ai/product-score")
 async def product_score(body: ScoreInput, admin: dict = Depends(require_admin)):
+    data = await run_score(body.title, body.description, body.category, body.sell_price, body.cost_price, body.model)
+    if not data:
+        raise HTTPException(502, "Réponse IA illisible, réessayez")
+    return data
+
+
+async def run_score(title: str, description: str = "", category: str = "", sell_price: float = 0.0, cost_price: float = 0.0, model: Optional[str] = None) -> dict:
     margin_pct = 0.0
-    if body.sell_price and body.cost_price:
-        margin_pct = round((body.sell_price - body.cost_price) / body.sell_price * 100, 1)
+    if sell_price and cost_price:
+        margin_pct = round((sell_price - cost_price) / sell_price * 100, 1)
     system = (
         "Tu es un analyste e-commerce spécialisé dropshipping. Tu évalues le potentiel "
         "d'un produit gagnant sur les critères : demande/tendance, marge, saturation/concurrence, "
         "stabilité du prix fournisseur, effet 'wow'. Réponds UNIQUEMENT en JSON valide."
     )
     prompt = f"""Évalue ce produit pour du dropshipping (marché Europe, niche domotique/télétravail).
-Titre: {body.title}
-Description: {body.description or "(vide)"}
-Catégorie: {body.category or "n/a"}
-Prix de vente: {body.sell_price or "n/a"} EUR
-Prix d'achat: {body.cost_price or "n/a"} EUR
+Titre: {title}
+Description: {description or "(vide)"}
+Catégorie: {category or "n/a"}
+Prix de vente: {sell_price or "n/a"} EUR
+Prix d'achat: {cost_price or "n/a"} EUR
 Marge calculée: {margin_pct}%
 
 Renvoie STRICTEMENT ce JSON :
@@ -219,12 +226,76 @@ Renvoie STRICTEMENT ce JSON :
   "recommended_price": 0.0,
   "target_audience": "cible FR en une phrase"
 }}"""
-    raw = await _llm_text(system, prompt, body.model)
+    raw = await _llm_text(system, prompt, model)
     data = _parse_json(raw)
-    if not data:
-        raise HTTPException(502, "Réponse IA illisible, réessayez")
-    data["margin_pct"] = margin_pct
+    if data:
+        data["margin_pct"] = margin_pct
     return data
+
+
+# ----------------------------- Optimisation "1 clic" (fiche + image + score) -----------------------------
+class OptimizeInput(BaseModel):
+    rewrite: bool = True
+    image: bool = False
+    score: bool = True
+    image_style: str = "lifestyle"
+    model: Optional[str] = None
+
+
+async def optimize_product_core(product_id: str, rewrite: bool = True, image: bool = False,
+                                score: bool = True, image_style: str = "lifestyle",
+                                model: Optional[str] = None) -> dict:
+    """Optimise une fiche produit existante en place. Réutilisé par l'admin et l'import CJ."""
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    updates: dict = {}
+    done = []
+    plain_desc = re.sub(r"<[^>]+>", " ", product.get("description") or "")[:800]
+
+    if rewrite:
+        data = await run_rewrite(product.get("title", ""), plain_desc, product.get("category", ""), "", model)
+        if data:
+            updates.update({
+                "title": data.get("title") or product.get("title"),
+                "title_en": data.get("title_en") or product.get("title_en") or product.get("title"),
+                "description": data.get("description") or product.get("description"),
+                "description_en": data.get("description_en") or product.get("description_en"),
+                "seo_title": data.get("seo_title", ""),
+                "seo_description": data.get("seo_description", ""),
+                "keywords": data.get("keywords", []),
+                "faq": data.get("faq", []),
+                "bullet_points": data.get("bullet_points", []),
+                "ai_optimized": True,
+            })
+            done.append("rewrite")
+
+    if score:
+        sd = await run_score(updates.get("title") or product.get("title", ""), plain_desc,
+                             product.get("category", ""), product.get("price", 0) or 0,
+                             product.get("buy_price", 0) or product.get("cost_price", 0) or 0, model)
+        if sd:
+            updates["ai_score"] = sd
+            done.append("score")
+
+    if image:
+        subject = updates.get("title") or product.get("title", "")
+        url = await run_generate_image(subject, image_style, product)
+        imgs = product.get("images") or []
+        imgs.append(url)
+        updates["images"] = imgs
+        done.append("image")
+
+    if updates:
+        updates["ai_optimized_at"] = datetime.now(timezone.utc).isoformat()
+        await db.products.update_one({"id": product_id}, {"$set": updates})
+    fresh = await db.products.find_one({"id": product_id}, {"_id": 0})
+    return {"done": done, "product": fresh}
+
+
+@ai_router.post("/admin/ai/optimize-product/{product_id}")
+async def optimize_product(product_id: str, body: OptimizeInput, admin: dict = Depends(require_admin)):
+    return await optimize_product_core(product_id, body.rewrite, body.image, body.score, body.image_style, body.model)
 
 
 # ----------------------------- 4. Assistant d'analyse décisionnelle -----------------------------
