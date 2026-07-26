@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -43,6 +43,7 @@ export default function Admin() {
         <div className="flex gap-2 border-b border-ink/10 mb-10">
           {[
             { key: "analytics", label: t.admin.tabAnalytics },
+            { key: "ai", label: t.admin.tabAi },
             { key: "products", label: t.admin.tabProducts },
             { key: "orders", label: t.admin.tabOrders },
             { key: "returns", label: t.admin.tabReturns },
@@ -64,6 +65,7 @@ export default function Admin() {
         </div>
 
         {tab === "analytics" && <AnalyticsTab />}
+        {tab === "ai" && <AiTab />}
         {tab === "products" && <ProductsTab onChange={loadStats} />}
         {tab === "orders" && <OrdersTab />}
         {tab === "returns" && <ReturnsTab />}
@@ -72,6 +74,295 @@ export default function Admin() {
         {tab === "messages" && <MessagesTab />}
         {tab === "promos" && <PromosTab />}
         {tab === "settings" && <SettingsTab />}
+      </div>
+    </div>
+  );
+}
+
+const AI_SUBTABS = [
+  { key: "rewrite", label: "Réécriture de fiche", icon: Wand2 },
+  { key: "image", label: "Générateur d'images", icon: ImagePlus },
+  { key: "score", label: "Scoring produit gagnant", icon: Gauge },
+  { key: "assistant", label: "Assistant d'analyse", icon: Bot },
+];
+
+function AiTab() {
+  const [sub, setSub] = useState("rewrite");
+  const [products, setProducts] = useState([]);
+  useEffect(() => { api.get("/products?size=200").then((r) => setProducts(r.data.items)).catch(() => {}); }, []);
+  return (
+    <div data-testid="admin-ai-tab">
+      <div className="flex flex-wrap gap-2 mb-8">
+        {AI_SUBTABS.map((s) => (
+          <button key={s.key} onClick={() => setSub(s.key)}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium border transition-colors ${sub === s.key ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone hover:border-ink"}`}
+            data-testid={`ai-subtab-${s.key}`}>
+            <s.icon className="w-4 h-4" /> {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "rewrite" && <AiRewritePanel products={products} onSaved={() => api.get("/products?size=200").then((r) => setProducts(r.data.items))} />}
+      {sub === "image" && <AiImagePanel products={products} />}
+      {sub === "score" && <AiScorePanel products={products} />}
+      {sub === "assistant" && <AiAssistantPanel />}
+    </div>
+  );
+}
+
+function AiRewritePanel({ products, onSaved }) {
+  const [pid, setPid] = useState("");
+  const [form, setForm] = useState({ title: "", description: "", category: "domotique", keywords_hint: "" });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const pickProduct = (id) => {
+    setPid(id);
+    const p = products.find((x) => x.id === id);
+    if (p) setForm({ title: p.title, description: (p.description || "").replace(/<[^>]+>/g, " ").slice(0, 800), category: p.category || "domotique", keywords_hint: "" });
+  };
+
+  const run = async () => {
+    if (!form.title) { toast.error("Renseignez un titre"); return; }
+    setLoading(true); setResult(null);
+    try {
+      const r = await api.post("/admin/ai/rewrite-product", form);
+      setResult(r.data);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+
+  const applyToProduct = async () => {
+    if (!pid || !result) return;
+    setSaving(true);
+    try {
+      const p = products.find((x) => x.id === pid);
+      await api.put(`/admin/products/${pid}`, {
+        title: result.title || p.title,
+        title_en: result.title_en || p.title_en || p.title,
+        description: result.description || p.description,
+        description_en: result.description_en || p.description_en || p.description,
+        price: p.price,
+        compare_at_price: p.compare_at_price || 0,
+        category: p.category,
+        images: p.images || [],
+        featured: !!p.featured,
+        stock: 100, active: true,
+      });
+      toast.success("Fiche mise à jour avec le contenu IA");
+      onSaved && onSaved();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Produit existant (optionnel)</label>
+          <select value={pid} onChange={(e) => pickProduct(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="ai-rewrite-product-select">
+            <option value="">— Saisie libre —</option>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        </div>
+        <In label="Titre brut" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Description brute</label>
+          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="ai-rewrite-desc" />
+        </div>
+        <In label="Mots-clés souhaités (optionnel)" value={form.keywords_hint} onChange={(v) => setForm({ ...form, keywords_hint: v })} />
+        <button onClick={run} disabled={loading} className="inline-flex items-center gap-2 bg-brand text-white px-6 py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="ai-rewrite-run-btn">
+          <Sparkles className="w-4 h-4" /> {loading ? "Génération…" : "Générer le contenu optimisé"}
+        </button>
+      </div>
+      <div className="border border-ink/10 p-6 bg-white/40 min-h-[300px]" data-testid="ai-rewrite-result">
+        {!result && <p className="text-stone text-sm">Le contenu optimisé apparaîtra ici (titre, description, bullet points, SEO, FAQ).</p>}
+        {result && (
+          <div className="space-y-4 text-sm">
+            <div><p className="text-xs uppercase font-bold text-stone">Titre</p><p className="font-medium">{result.title}</p></div>
+            {result.title_en && <div><p className="text-xs uppercase font-bold text-stone">Title (EN)</p><p>{result.title_en}</p></div>}
+            <div><p className="text-xs uppercase font-bold text-stone">Description</p><div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: result.description }} /></div>
+            {result.bullet_points?.length > 0 && <div><p className="text-xs uppercase font-bold text-stone">Arguments</p><ul className="list-disc pl-5">{result.bullet_points.map((b, i) => <li key={i}>{b}</li>)}</ul></div>}
+            <div><p className="text-xs uppercase font-bold text-stone">SEO</p><p className="font-medium">{result.seo_title}</p><p className="text-stone">{result.seo_description}</p></div>
+            {result.keywords?.length > 0 && <div className="flex flex-wrap gap-1">{result.keywords.map((k, i) => <span key={i} className="text-xs bg-ink/5 px-2 py-1 rounded">{k}</span>)}</div>}
+            {result.faq?.length > 0 && <div><p className="text-xs uppercase font-bold text-stone">FAQ</p>{result.faq.map((f, i) => <div key={i} className="mb-2"><p className="font-medium">{f.q}</p><p className="text-stone">{f.a}</p></div>)}</div>}
+            {pid && <button onClick={applyToProduct} disabled={saving} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="ai-rewrite-apply-btn">{saving ? "…" : "Appliquer à la fiche produit"}</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AiImagePanel({ products }) {
+  const [pid, setPid] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [style, setStyle] = useState("lifestyle");
+  const [useRef, setUseRef] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [img, setImg] = useState(null);
+  const styles = [
+    { key: "lifestyle", label: "Lifestyle" },
+    { key: "white", label: "Fond blanc" },
+    { key: "infographic", label: "Infographie" },
+    { key: "thumbnail", label: "Miniature" },
+  ];
+  const run = async () => {
+    if (!pid && !prompt) { toast.error("Choisissez un produit ou saisissez un prompt"); return; }
+    setLoading(true); setImg(null);
+    try {
+      const r = await api.post("/admin/ai/generate-image", { product_id: pid || null, prompt, style, use_reference: useRef });
+      setImg(r.data.url);
+      toast.success(pid ? "Image générée et ajoutée au produit" : "Image générée");
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Produit (optionnel)</label>
+          <select value={pid} onChange={(e) => setPid(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="ai-image-product-select">
+            <option value="">— Prompt libre —</option>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        </div>
+        <In label="Prompt (sujet, optionnel si produit choisi)" value={prompt} onChange={setPrompt} />
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Style</label>
+          <div className="flex flex-wrap gap-2">
+            {styles.map((s) => (
+              <button key={s.key} onClick={() => setStyle(s.key)} className={`px-4 py-2 rounded-full text-sm border transition-colors ${style === s.key ? "bg-ink text-cream border-ink" : "border-ink/20 hover:border-ink"}`} data-testid={`ai-image-style-${s.key}`}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" checked={useRef} onChange={(e) => setUseRef(e.target.checked)} className="accent-brand w-4 h-4" data-testid="ai-image-useref" />
+          Utiliser l'image produit comme référence
+        </label>
+        <button onClick={run} disabled={loading} className="inline-flex items-center gap-2 bg-brand text-white px-6 py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="ai-image-run-btn">
+          <ImagePlus className="w-4 h-4" /> {loading ? "Génération (≈20s)…" : "Générer l'image"}
+        </button>
+      </div>
+      <div className="border border-ink/10 p-4 bg-white/40 flex items-center justify-center min-h-[300px]" data-testid="ai-image-result">
+        {loading && <p className="text-stone text-sm">Génération en cours…</p>}
+        {!loading && !img && <p className="text-stone text-sm">L'image générée apparaîtra ici.</p>}
+        {!loading && img && <img src={img} alt="IA" className="max-h-[420px] w-auto object-contain" data-testid="ai-image-output" />}
+      </div>
+    </div>
+  );
+}
+
+function AiScorePanel({ products }) {
+  const [pid, setPid] = useState("");
+  const [form, setForm] = useState({ title: "", description: "", category: "domotique", sell_price: "", cost_price: "" });
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState(null);
+  const pick = (id) => {
+    setPid(id);
+    const p = products.find((x) => x.id === id);
+    if (p) setForm({ title: p.title, description: (p.description || "").replace(/<[^>]+>/g, " ").slice(0, 500), category: p.category || "domotique", sell_price: p.price || "", cost_price: p.buy_price || "" });
+  };
+  const run = async () => {
+    if (!form.title) { toast.error("Renseignez un titre"); return; }
+    setLoading(true); setRes(null);
+    try {
+      const r = await api.post("/admin/ai/product-score", { ...form, sell_price: parseFloat(form.sell_price) || 0, cost_price: parseFloat(form.cost_price) || 0 });
+      setRes(r.data);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+  const verdictColor = (v) => v === "gagnant" ? "text-green-600" : v === "à éviter" ? "text-brand" : "text-amber-600";
+  const Bar = ({ label, val }) => (
+    <div><div className="flex justify-between text-xs mb-1"><span className="text-stone">{label}</span><span className="font-bold">{val}</span></div><div className="h-2 bg-ink/10 rounded"><div className="h-2 bg-brand rounded" style={{ width: `${val}%` }} /></div></div>
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">Produit existant (optionnel)</label>
+          <select value={pid} onChange={(e) => pick(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="ai-score-product-select">
+            <option value="">— Saisie libre —</option>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        </div>
+        <In label="Titre" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+        <div className="grid grid-cols-2 gap-4">
+          <In label="Prix vente (€)" type="number" value={form.sell_price} onChange={(v) => setForm({ ...form, sell_price: v })} />
+          <In label="Prix achat (€)" type="number" value={form.cost_price} onChange={(v) => setForm({ ...form, cost_price: v })} />
+        </div>
+        <button onClick={run} disabled={loading} className="inline-flex items-center gap-2 bg-brand text-white px-6 py-3 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="ai-score-run-btn">
+          <Gauge className="w-4 h-4" /> {loading ? "Analyse…" : "Évaluer le produit"}
+        </button>
+      </div>
+      <div className="border border-ink/10 p-6 bg-white/40 min-h-[300px]" data-testid="ai-score-result">
+        {!res && <p className="text-stone text-sm">Le score d'opportunité et l'analyse apparaîtront ici.</p>}
+        {res && (
+          <div className="space-y-4">
+            <div className="flex items-end gap-4">
+              <div><p className="text-xs uppercase font-bold text-stone">Score d'opportunité</p><p className="font-display font-black text-5xl">{res.opportunity_score}<span className="text-2xl text-stone">/100</span></p></div>
+              <p className={`font-bold uppercase ${verdictColor(res.verdict)}`} data-testid="ai-score-verdict">{res.verdict}</p>
+            </div>
+            <div className="space-y-2">
+              <Bar label="Demande" val={res.demand} />
+              <Bar label="Marge" val={res.margin} />
+              <Bar label="Concurrence" val={res.competition} />
+            </div>
+            <p className="text-sm"><span className="text-stone">Tendance :</span> <span className="font-medium">{res.trend}</span> · <span className="text-stone">Marge :</span> <span className="font-medium">{res.margin_pct}%</span> · <span className="text-stone">Prix conseillé :</span> <span className="font-medium">{res.recommended_price}€</span></p>
+            {res.reasons?.length > 0 && <ul className="list-disc pl-5 text-sm">{res.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+            {res.target_audience && <p className="text-sm text-stone">🎯 {res.target_audience}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AiAssistantPanel() {
+  const [msgs, setMsgs] = useState([]);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const suggestions = [
+    "Quels sont mes produits les plus rentables ?",
+    "Quels produits devrais-je retirer du catalogue ?",
+    "Comment augmenter mon panier moyen ?",
+    "Résume la santé de ma boutique.",
+  ];
+  const ask = async (question) => {
+    const text = question || q;
+    if (!text.trim()) return;
+    setMsgs((m) => [...m, { role: "user", text }]);
+    setQ(""); setLoading(true);
+    try {
+      const r = await api.post("/admin/ai/analyze", { question: text });
+      setMsgs((m) => [...m, { role: "ai", text: r.data.answer }]);
+    } catch (e) {
+      setMsgs((m) => [...m, { role: "ai", text: "Erreur : " + formatApiError(e.response?.data?.detail) }]);
+    } finally { setLoading(false); }
+  };
+  return (
+    <div className="max-w-3xl" data-testid="ai-assistant">
+      {msgs.length === 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {suggestions.map((s, i) => (
+            <button key={i} onClick={() => ask(s)} className="text-sm border border-ink/20 rounded-full px-4 py-2 hover:border-ink transition-colors" data-testid={`ai-suggestion-${i}`}>{s}</button>
+          ))}
+        </div>
+      )}
+      <div className="space-y-4 mb-6">
+        {msgs.map((m, i) => (
+          <div key={i} className={`p-4 border ${m.role === "user" ? "border-ink/20 bg-white/40 ml-8" : "border-brand/30 bg-brand/5 mr-8"}`} data-testid={`ai-msg-${m.role}`}>
+            <p className="text-xs uppercase font-bold text-stone mb-1">{m.role === "user" ? "Vous" : "Assistant IA"}</p>
+            <div className="prose prose-sm max-w-none whitespace-pre-wrap">{m.text}</div>
+          </div>
+        ))}
+        {loading && <div className="p-4 border border-brand/30 bg-brand/5 mr-8 text-stone text-sm">L'assistant réfléchit…</div>}
+      </div>
+      <div className="flex gap-2 sticky bottom-4">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} placeholder="Posez une question sur votre boutique…" className="flex-1 px-4 py-3 border border-ink/20 bg-cream outline-none focus:border-ink" data-testid="ai-assistant-input" />
+        <button onClick={() => ask()} disabled={loading} className="inline-flex items-center gap-2 bg-ink text-cream px-5 py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="ai-assistant-send-btn">
+          <Send className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import fulfillment as fulfillmod
 from payments import payments_router
 from extras import extras_router, validate_promo, seed_extras
 from ops import ops_router
+from ai import ai_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -770,6 +771,7 @@ app.include_router(api)
 app.include_router(payments_router)
 app.include_router(extras_router)
 app.include_router(ops_router)
+app.include_router(ai_router)
 
 app.add_middleware(
     CORSMiddleware,
