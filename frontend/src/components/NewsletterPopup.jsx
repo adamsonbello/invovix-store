@@ -16,6 +16,7 @@ export default function NewsletterPopup() {
   const p = t.popup;
 
   useEffect(() => {
+    if (window.location.pathname.startsWith("/admin")) return;
     if (localStorage.getItem("invovix_popup_seen")) return;
     const timer = setTimeout(() => setOpen(true), 12000);
     return () => clearTimeout(timer);

@@ -74,6 +74,22 @@ Paiements: Stripe + PayPal. Espace admin avec connexion. Comptes clients. Design
   - **Identité légale** dans Admin > Réglages : forme juridique, SIREN, SIRET, régime TVA, taux — laissés en placeholders (choix utilisateur), configurables. Persistance VÉRIFIÉE.
 - Validation : **68/68 pytest** (dont test_ereporting_invoice.py) + UI e2e (iteration 4). Aucun bug.
 
+## Implemented (2026-06 — Phase 1 : Cerveau IA / AI Brain)
+Objectif utilisateur : transformer la boutique en ERP dropshipping (30 modules). Phase 1 = intelligence IA.
+- **Module IA backend** `/app/backend/ai.py` (`ai_router`), clé universelle Emergent (`EMERGENT_LLM_KEY`), texte = `gpt-5.4` (configurable `AI_TEXT_MODEL`), image = `gemini-3.1-flash-image-preview` (Nano Banana).
+- **Réécriture de fiche** `POST /api/admin/ai/rewrite-product` → JSON (title, title_en, description FR/EN HTML, bullet_points, seo_title, seo_description, keywords, faq). VÉRIFIÉ.
+- **Générateur d'images IA** `POST /api/admin/ai/generate-image` (styles: lifestyle/white/infographic/thumbnail, édition depuis image produit de référence). Sauvegarde en `/public/products/ai_*.png` (same-origin, anti-hotlink), ajout auto à la galerie produit. VÉRIFIÉ (fichier servi 200).
+- **Scoring produit gagnant** `POST /api/admin/ai/product-score` → opportunity_score, demand/margin/competition, verdict, reasons, recommended_price, margin_pct. VÉRIFIÉ.
+- **Assistant d'analyse décisionnelle** `POST /api/admin/ai/analyze` : Q&A langage naturel FR sur données réelles (CA, top produits, ruptures, à expédier…). VÉRIFIÉ.
+- **UI Admin > Studio IA** (`Admin.jsx` : `AiTab` + 4 panneaux) avec application directe du contenu réécrit sur la fiche produit.
+- Validation : **8/8 pytest** (`tests/test_ai.py`) + smoke frontend (iteration 5). Pop-up newsletter masqué sur /admin.
+
+## Roadmap ERP (phases restantes)
+- **Phase 2 — Back-office ERP** : fournisseurs + comparateur (mod 6/23), catalogue enrichi (marge, poids, dims, marques, EAN, vidéos, PDF — mod 2), dashboard enrichi (bénéfice, ruptures, à expédier, alertes — mod 1), moteur de règles no-code (mod 21), import CSV/Excel/URL (mod 3).
+- **Phase 3 — CRM & Marketing** : CRM + fidélité (mod 10), email marketing/panier abandonné (mod 11), notifications multi-canal SMS/WhatsApp/Discord/Slack (mod 12), bundles + ventes flash (mod 16).
+- **Phase 4 — Plateforme & sécurité** : rôles & permissions (mod 20), 2FA/journal/sauvegardes (mod 27), PWA (mod 26), multi-boutiques (mod 19), documents + API publique (mod 24/25).
+- Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → approche retenue = CSV/Excel + import par URL (CJ reste le pipeline principal).
+
 ## Requires user action (mise à jour)
 - **Identité légale société** : renseigner forme juridique, SIREN/SIRET, TVA intracom (et régime/taux TVA) dans Admin > Réglages avant émission de factures officielles (actuellement placeholders vides).
 - **reCAPTCHA v3** : ajouter le domaine de production `invovix.store` **ET** le domaine de preview aux domaines autorisés dans la console Google reCAPTCHA pour activer le scoring anti-bot complet (actuellement soft-fail hors invovix.store).
