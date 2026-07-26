@@ -1,0 +1,59 @@
+{
+  "summary": "End-to-end test of iteration 3 back-office batch: analytics dashboard, product variants/stock enrichment, admin stock sync, PDF invoices, returns/refunds flow, CJ webhook, tracking scheduler, and regression on previously shipped features. 52/52 backend pytest tests pass (22 new + 12 blog/contact + 16 extras + 2 flaky-safe re-uses). UI verified on the preview URL: analytics dashboard renders 6 KPI tiles with live values (CA 214.88€, 13 paid orders, AOV 16.53€, conversion 100%, 13 visits, 5 clients), area+bar charts render via recharts, storefront product page shows price+stock+add/buy buttons, add-to-cart+increment+WELCOME10 promo work in cart (discount -6.98€ on 69.80€ subtotal), /account shows 13 invoice buttons and 12 return buttons with status badges (requested/rejected/approved), FR/EN toggle+FAQ+CGV+sitemap all 200.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AnalyticsTab (Admin.jsx L707-724)",
+        "issue": "KPI cards used data-testid based on translated label text (e.g. kpi-CHIFFRE D'AFFAIRES) making them locale-brittle and not matching the review-request testids (kpi-revenue, kpi-paid-orders, kpi-aov, kpi-conversion, kpi-visits, kpi-customers). Fixed in this iteration: added stable `key` field per KPI and switched to data-testid={`kpi-${k.key}`}.",
+        "selector": "[data-testid='kpi-revenue']",
+        "priority": "LOW"
+      },
+      {
+        "component": "AnalyticsTab charts",
+        "issue": "Revenue area chart, top-products bar chart and status-breakdown section have no data-testid attributes (only .recharts-surface is present). Functionally they render correctly (2 charts found + 5 status boxes visible in screenshot). Not fixed — main agent may want to add `revenue-chart`, `top-products-chart`, `status-breakdown` testids for future e2e stability.",
+        "selector": "[data-testid='revenue-chart']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Admin > Analytics > Top produits bar chart",
+        "issues": ["Bars render solid black which contrasts oddly with the rest of the orange/cream brand palette — consider using text-brand fill for visual consistency with the revenue chart."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backoffice.py",
+    "/app/test_reports/pytest/iteration_3.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Add data-testids `revenue-chart`, `top-products-chart`, `status-breakdown` on the AnalyticsTab wrappers in /app/frontend/src/pages/Admin.jsx around lines 727-795 for stable e2e testing.",
+    "OPTIONAL: Style top-products BarChart <Bar fill=...> with the brand color to match the revenue AreaChart.",
+    "NOTE (already existed, not blocking): ops.py `decide_return` has a dead expression `order.get('payment_method') == 'stripe' or True` on L202 that always evaluates truthy — simplify to always attempt Stripe refund and fallback to manual (current behavior is already correct but the code is misleading).",
+    "NOTE: ops.py `_stripe_refund` ignores `amount` argument entirely — refund is always full. If partial refunds are ever needed this must be revisited."
+  ],
+  "critical_code_review_comments": [
+    "ops.py `decide_return` L202: `if order and (order.get('payment_method') == 'stripe' or True)` — the `or True` makes the condition always True; keep the intent explicit or remove the check.",
+    "ops.py `_stripe_refund` signature accepts `amount` but never uses it. Either drop the param or pass `amount=int(amount*100)` to `stripe.Refund.create` for partial refunds.",
+    "ops.py `create_return` allows a customer to open a new return AFTER a previous one was `rejected` (the `$in` filter excludes `rejected`). This is likely intentional (customer can resubmit) but should be confirmed with product; today's UI does not surface the previous rejection reason.",
+    "ops.py `analytics` iterates over up to 20000 paid orders in Python; fine for MVP but should be aggregated with a Mongo `$group` pipeline once orders grow.",
+    "server.py CORS config uses `allow_origins=['*']` with `allow_credentials=False` — consistent, but if cookies/JWT-in-cookie is ever added, this needs explicit origins.",
+    "Admin.jsx has grown further (now 830 lines with 8 tab components). Same recommendation as iterations 1 & 2: extract AnalyticsTab and ReturnsTab into /pages/admin/*.jsx files.",
+    "Admin.jsx analytics KPI data-testids were built from the translated label — brittle across FR/EN. Fixed this iteration.",
+    "cj.py `enrich_product` sets `in_stock=True` when `stock_total` is None (not yet synced). This is a deliberate 'unknown = available' fallback but means brand-new products that CJ has actually flagged out-of-stock will be shown available until the first sync. Consider running sync-stock-all on first import."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_backoffice.py (new, 22 tests, uses pymongo direct DB access to mark orders paid because no admin API exists to flip payment_status)",
+    "/app/test_reports/pytest/iteration_3.xml (new)",
+    "/app/frontend/src/pages/Admin.jsx (added stable data-testid keys on KPI tiles: kpi-revenue/kpi-paid-orders/kpi-aov/kpi-conversion/kpi-visits/kpi-customers)"
+  ],
+  "success_rate": { "backend": "100% (52/52)", "frontend": "100% functional; 2 minor testability gaps (chart testids)" },
+  "test_credentials": "admin@invovix.store / Invovix2026! and client@invovix.store / Client2026! both working. Also created ephemeral users with prefix 'other<epoch>@invovix.store' during invoice non-owner test — safe to ignore.",
+  "seed_data_creation": "Created ~7 additional orders under client@invovix.store during this run: 1 unpaid (invoice-400 test), 3 marked paid + return-requested/rejected/approved via direct Mongo write, plus a couple test orders. Left in DB for realistic analytics population (visits_30d=13, paid_orders=13, revenue=214.88€). No CJ supplier orders were created (fulfill button was not triggered, per the review guardrail).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Full backend regression: `pytest /app/backend/tests/ -v` runs 52 tests in ~9s — all green. Key gotchas: (1) There is NO admin API to flip an order's payment_status to 'paid' — tests use pymongo directly via /app/backend/.env (MONGO_URL + DB_NAME) to simulate a paid order before hitting /orders/{id}/invoice and POST /returns. (2) cj_product fixture picks the first source==cjdropshipping product; the current catalog products all return stock_total=None initially (variants not yet synced) which is expected — the `in_stock=True` default handles this. (3) `_stripe_refund` returns {'refunded': False, 'reason': 'manual'} when there is no matching payment_transactions row, so admin approve on a test order lands as status='approved' (not 'refunded') which is asserted in test_return_full_flow. (4) `TEST banner FR` is still set from iteration 2 — reset via /admin > Réglages if needed. (5) Newsletter popup still 12s trigger. (6) Admin.jsx KPI data-testids now use stable keys (kpi-revenue etc.) — the Playwright suite must use these, not the translated labels used previously.",
+  "rca of the issue": "No blocking issues. Only functional gap identified during UI testing was that KPI cards were exposed with locale-dependent data-testids (e.g. `kpi-CHIFFRE D'AFFAIRES`) instead of the semantic ids requested (`kpi-revenue`, etc). Root cause: React map used `k.label` (translated string) both as key and as data-testid suffix. Fix applied: added a stable `key` field per KPI descriptor and switched data-testid to that key. Verified via component re-render (hot reload). Charts still lack testids but recharts markup is stable enough for CSS selectors; deferred to main agent for optional cleanup."
+}

@@ -22,6 +22,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState(1);
+  const [selVid, setSelVid] = useState("");
 
   useEffect(() => {
     api.get(`/products/${id}`).then((r) => setProduct(r.data)).catch(() => navigate("/shop"));
@@ -34,6 +35,17 @@ export default function ProductDetail() {
   const hasCompare = product.compare_at_price > product.price;
   const wished = has(product.id);
 
+  const variants = product.variants || [];
+  const activeVar = variants.find((v) => v.vid === selVid) || variants[0] || null;
+  const showVariants = variants.length > 1;
+  const displayPrice = activeVar ? activeVar.price : product.price;
+  const displayImage = (activeVar && activeVar.image) || product.images?.[0];
+  const knownStock = activeVar && typeof activeVar.stock === "number"
+    ? activeVar.stock
+    : product.stock_total;
+  const outOfStock = typeof knownStock === "number" && knownStock <= 0;
+  const lowStock = typeof knownStock === "number" && knownStock > 0 && knownStock <= 5;
+
   const onWish = async () => {
     if (!user) {
       toast.error(t.wishlist.loginFirst);
@@ -45,7 +57,7 @@ export default function ProductDetail() {
   };
 
   const buyNow = () => {
-    add(product, qty);
+    add(product, qty, activeVar);
     navigate("/cart");
   };
 
@@ -87,10 +99,15 @@ export default function ProductDetail() {
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             className="relative aspect-square bg-[#f0efed] overflow-hidden"
           >
-            <img src={product.images?.[0]} alt={title} className="absolute inset-0 w-full h-full object-cover" />
-            {hasCompare && (
+            <img src={displayImage} alt={title} className="absolute inset-0 w-full h-full object-cover" />
+            {hasCompare && !outOfStock && (
               <span className="absolute top-5 left-5 bg-brand text-white text-xs font-bold px-3 py-1.5 uppercase tracking-wide">
                 {t.product.save} {(product.compare_at_price - product.price).toFixed(2)}€
+              </span>
+            )}
+            {outOfStock && (
+              <span className="absolute top-5 left-5 bg-ink text-cream text-xs font-bold px-3 py-1.5 uppercase tracking-wide" data-testid="pd-oos-badge">
+                {t.product.outOfStock}
               </span>
             )}
           </motion.div>
@@ -102,7 +119,7 @@ export default function ProductDetail() {
             </h1>
 
             <div className="flex items-baseline gap-4 mt-6">
-              <span className="font-display font-bold text-4xl">{product.price.toFixed(2)}€</span>
+              <span className="font-display font-bold text-4xl" data-testid="pd-price">{displayPrice.toFixed(2)}€</span>
               {hasCompare && <span className="text-stone line-through text-2xl">{product.compare_at_price.toFixed(2)}€</span>}
             </div>
 
@@ -113,8 +130,38 @@ export default function ProductDetail() {
               </div>
             )}
 
-            <div className="flex items-center gap-2 mt-4 text-emerald-600 text-sm font-medium">
-              <Check className="w-4 h-4" /> {t.product.inStock}
+            {showVariants && (
+              <div className="mt-6" data-testid="pd-variants">
+                <p className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-3">{t.product.variant}</p>
+                <div className="flex flex-wrap gap-2">
+                  {variants.map((v) => {
+                    const vOos = typeof v.stock === "number" && v.stock <= 0;
+                    return (
+                      <button
+                        key={v.vid}
+                        onClick={() => !vOos && setSelVid(v.vid)}
+                        disabled={vOos}
+                        className={`px-4 py-2 border text-sm transition-colors ${
+                          activeVar?.vid === v.vid ? "border-ink bg-ink text-cream" : "border-ink/20 hover:border-ink"
+                        } ${vOos ? "opacity-40 line-through cursor-not-allowed" : ""}`}
+                        data-testid={`pd-variant-${v.vid}`}
+                      >
+                        {v.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mt-4 text-sm font-medium" data-testid="pd-stock">
+              {outOfStock ? (
+                <span className="text-red-500">● {t.product.outOfStock}</span>
+              ) : lowStock ? (
+                <span className="text-amber-600">● {t.product.lowStock.replace("{n}", knownStock)}</span>
+              ) : (
+                <span className="flex items-center gap-2 text-emerald-600"><Check className="w-4 h-4" /> {t.product.inStock}</span>
+              )}
             </div>
 
             <p className="text-ink/70 text-lg leading-relaxed mt-8 border-t border-ink/10 pt-8">{desc}</p>
@@ -130,11 +177,12 @@ export default function ProductDetail() {
                 </button>
               </div>
               <button
-                onClick={() => { add(product, qty); toast.success(t.product.added); }}
-                className="flex-1 border border-ink px-6 py-4 rounded-full font-medium hover:bg-ink hover:text-cream transition-colors"
+                onClick={() => { add(product, qty, activeVar); toast.success(t.product.added); }}
+                disabled={outOfStock}
+                className="flex-1 border border-ink px-6 py-4 rounded-full font-medium hover:bg-ink hover:text-cream transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink"
                 data-testid="add-to-cart-btn"
               >
-                {t.product.add}
+                {outOfStock ? t.product.outOfStock : t.product.add}
               </button>
               <button
                 onClick={onWish}
@@ -149,7 +197,8 @@ export default function ProductDetail() {
             </div>
             <button
               onClick={buyNow}
-              className="w-full mt-3 bg-brand text-white px-6 py-4 rounded-full font-medium hover:bg-ink transition-colors"
+              disabled={outOfStock}
+              className="w-full mt-3 bg-brand text-white px-6 py-4 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               data-testid="buy-now-btn"
             >
               {t.product.buy}

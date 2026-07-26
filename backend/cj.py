@@ -133,6 +133,96 @@ async def import_product(pid: str) -> dict:
     return normalize_cj_product(detail)
 
 
+# ----------------------------- Variants & stock -----------------------------
+def product_margin_ratio(p: dict) -> float:
+    cost = p.get("cost_price") or 0
+    price = p.get("price") or 0
+    try:
+        if cost and price:
+            return float(price) / float(cost)
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    return 1.6
+
+
+def serialize_variants(p: dict) -> list:
+    ratio = product_margin_ratio(p)
+    out = []
+    for v in (p.get("cj_variants") or []):
+        try:
+            cost = float(v.get("variantSellPrice") or 0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        price = round(cost * ratio, 2) if cost else float(p.get("price", 0) or 0)
+        stock = v.get("stock")  # populated by sync_product_stock; None = unknown
+        out.append({
+            "vid": str(v.get("vid") or ""),
+            "name": v.get("variantNameEn") or v.get("variantName") or v.get("variantKey") or "Standard",
+            "sku": v.get("variantSku") or "",
+            "price": price,
+            "image": v.get("variantImage") or (p.get("images") or [None])[0],
+            "stock": stock,
+        })
+    return out
+
+
+def product_stock_total(p: dict):
+    """Returns int stock if known, else None (unknown -> treat as available)."""
+    vs = p.get("cj_variants") or []
+    if vs:
+        known = [v.get("stock") for v in vs if isinstance(v.get("stock"), int)]
+        if known:
+            return sum(known)
+        return None  # not synced yet
+    return int(p.get("stock", 0) or 0)
+
+
+def enrich_product(p: dict) -> dict:
+    variants = serialize_variants(p)
+    stock_total = product_stock_total(p)
+    p = dict(p)
+    p["variants"] = variants
+    p["has_variants"] = len(variants) > 1
+    p["stock_total"] = stock_total
+    p["in_stock"] = True if stock_total is None else stock_total > 0
+    p.pop("cj_variants", None)  # keep response light / hide raw supplier data
+    return p
+
+
+async def query_vid_stock(vid: str) -> int:
+    try:
+        data = await cj_request("GET", "/product/stock/queryByVid", params={"vid": vid})
+        rows = data.get("data") or []
+        total = 0
+        for r in rows:
+            total += int(r.get("totalInventoryNum") or r.get("cjInventoryNum") or r.get("storageNum") or 0)
+        return total
+    except Exception:
+        return -1  # error sentinel
+
+
+async def sync_product_stock(product: dict) -> dict:
+    """Query live CJ stock for each variant and persist it on the product."""
+    variants = product.get("cj_variants") or []
+    if not variants:
+        return {"ok": False, "reason": "no CJ variants"}
+    total = 0
+    updated = []
+    for v in variants:
+        vid = str(v.get("vid") or "")
+        s = await query_vid_stock(vid) if vid else -1
+        v = dict(v)
+        v["stock"] = None if s < 0 else s
+        if isinstance(v["stock"], int):
+            total += v["stock"]
+        updated.append(v)
+    await db.products.update_one(
+        {"id": product["id"]},
+        {"$set": {"cj_variants": updated, "stock_total": total, "stock_synced_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True, "stock_total": total, "variants": len(updated)}
+
+
 # ----------------------------- Order fulfillment -----------------------------
 EUROZONE_CODES = {
     "france": "FR", "belgique": "BE", "belgium": "BE", "allemagne": "DE", "germany": "DE",
@@ -171,7 +261,7 @@ async def create_cj_order(order: dict) -> dict:
         p = await db.products.find_one({"id": it["product_id"]}, {"_id": 0})
         if not p:
             raise RuntimeError(f"Produit introuvable: {it['product_id']}")
-        vid = _variant_id(p)
+        vid = it.get("variant_id") or _variant_id(p)
         if not vid:
             raise RuntimeError(f"Produit sans variante CJ (non-dropshipping): {p.get('title','')}")
         products.append({"vid": vid, "quantity": int(it["quantity"])})

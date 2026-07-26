@@ -5,7 +5,8 @@ const CartContext = createContext(null);
 export function CartProvider({ children }) {
   const [items, setItems] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("invovix_cart")) || [];
+      const raw = JSON.parse(localStorage.getItem("invovix_cart")) || [];
+      return raw.map((i) => ({ ...i, key: i.key || `${i.product_id}::${i.variant_id || ""}` }));
     } catch {
       return [];
     }
@@ -30,34 +31,39 @@ export function CartProvider({ children }) {
   const applyPromo = (p) => setPromo(p);
   const removePromo = () => setPromo(null);
 
-  const add = (product, quantity = 1) => {
+  const add = (product, quantity = 1, variant = null) => {
+    const vid = variant?.vid || "";
+    const unitPrice = variant?.price ?? product.price;
+    const image = variant?.image || (product.images || [])[0];
+    const key = `${product.id}::${vid}`;
     setItems((prev) => {
-      const existing = prev.find((i) => i.product_id === product.id);
+      const existing = prev.find((i) => i.key === key);
       if (existing) {
-        return prev.map((i) =>
-          i.product_id === product.id ? { ...i, quantity: i.quantity + quantity } : i
-        );
+        return prev.map((i) => (i.key === key ? { ...i, quantity: i.quantity + quantity } : i));
       }
       return [
         ...prev,
         {
+          key,
           product_id: product.id,
+          variant_id: vid,
+          variant_name: variant && variant.name ? variant.name : "",
           title: product.title,
           title_en: product.title_en,
-          price: product.price,
-          image: (product.images || [])[0],
+          price: unitPrice,
+          image,
           quantity,
         },
       ];
     });
   };
 
-  const updateQty = (productId, quantity) => {
-    if (quantity < 1) return remove(productId);
-    setItems((prev) => prev.map((i) => (i.product_id === productId ? { ...i, quantity } : i)));
+  const updateQty = (key, quantity) => {
+    if (quantity < 1) return remove(key);
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, quantity } : i)));
   };
 
-  const remove = (productId) => setItems((prev) => prev.filter((i) => i.product_id !== productId));
+  const remove = (key) => setItems((prev) => prev.filter((i) => i.key !== key));
   const clear = () => { setItems([]); setPromo(null); };
 
   const count = items.reduce((s, i) => s + i.quantity, 0);

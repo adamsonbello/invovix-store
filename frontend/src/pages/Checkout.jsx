@@ -41,7 +41,7 @@ export default function Checkout() {
 
   const createOrder = async () => {
     const res = await api.post("/orders", {
-      items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
+      items: items.map((i) => ({ product_id: i.product_id, quantity: i.quantity, variant_id: i.variant_id || "" })),
       shipping_address: form,
       promo_code: promo?.code || "",
     });

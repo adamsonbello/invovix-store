@@ -23,6 +23,7 @@ import brevo as brevomod
 import fulfillment as fulfillmod
 from payments import payments_router
 from extras import extras_router, validate_promo, seed_extras
+from ops import ops_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -103,6 +104,7 @@ class ProductInput(BaseModel):
 class CartItem(BaseModel):
     product_id: str
     quantity: int = Field(ge=1)
+    variant_id: Optional[str] = ""
 
 
 class ShippingAddress(BaseModel):
@@ -217,6 +219,7 @@ async def list_products(
     total = await db.products.count_documents(query)
     cursor = db.products.find(query, {"_id": 0}).skip((page - 1) * size).limit(size)
     items = await cursor.to_list(size)
+    items = [cjmod.enrich_product(p) for p in items]
     return {"items": items, "total": total, "page": page, "size": size}
 
 
@@ -231,7 +234,7 @@ async def get_product(product_id: str):
     p = await db.products.find_one({"id": product_id}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Produit introuvable")
-    return p
+    return cjmod.enrich_product(p)
 
 
 @api.post("/admin/products")
@@ -480,14 +483,26 @@ async def _build_order(body: OrderInput, user: dict) -> dict:
         p = await db.products.find_one({"id": it.product_id}, {"_id": 0})
         if not p:
             raise HTTPException(400, f"Produit introuvable: {it.product_id}")
-        line_total = round(p["price"] * it.quantity, 2)
+        variants = cjmod.serialize_variants(p)
+        chosen = None
+        if it.variant_id:
+            chosen = next((v for v in variants if v["vid"] == it.variant_id), None)
+        if not chosen and variants:
+            chosen = variants[0]
+        unit_price = chosen["price"] if chosen else p["price"]
+        # Stock guard (only when stock is known/synced)
+        if chosen and isinstance(chosen.get("stock"), int) and chosen["stock"] < it.quantity:
+            raise HTTPException(400, f"Stock insuffisant pour « {p['title']} » (reste {chosen['stock']}).")
+        line_total = round(unit_price * it.quantity, 2)
         subtotal += line_total
         line_items.append({
             "product_id": p["id"],
             "title": p["title"],
-            "price": p["price"],
+            "variant_id": chosen["vid"] if chosen else None,
+            "variant_name": chosen["name"] if chosen and len(variants) > 1 else None,
+            "price": unit_price,
             "quantity": it.quantity,
-            "image": (p.get("images") or [None])[0],
+            "image": (chosen["image"] if chosen else None) or (p.get("images") or [None])[0],
             "line_total": line_total,
         })
     subtotal = round(subtotal, 2)
@@ -726,6 +741,26 @@ async def stripe_webhook(request: Request):
     return {"status": "ok"}
 
 
+# ----------------------------- CJ tracking webhook (push updates) -----------------------------
+@app.post("/api/webhook/cj")
+async def cj_webhook(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    data = payload.get("data") or payload
+    order_number = data.get("orderNumber") or data.get("orderNum")
+    cj_order_id = data.get("orderId")
+    order = None
+    if order_number:
+        order = await db.orders.find_one({"id": order_number}, {"_id": 0, "id": 1})
+    if not order and cj_order_id:
+        order = await db.orders.find_one({"cj_order_id": str(cj_order_id)}, {"_id": 0, "id": 1})
+    if order:
+        asyncio.create_task(fulfillmod.sync_cj_order(order["id"]))
+    return {"status": "ok"}
+
+
 @api.get("/")
 async def root():
     return {"message": "Invovix API", "status": "ok"}
@@ -734,6 +769,7 @@ async def root():
 app.include_router(api)
 app.include_router(payments_router)
 app.include_router(extras_router)
+app.include_router(ops_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -838,6 +874,29 @@ async def seed_products():
     logger.info("Sample products seeded")
 
 
+async def _tracking_sync_loop():
+    """Periodically sync CJ tracking for open orders and email customers on shipment."""
+    interval = int(os.environ.get("CJ_SYNC_INTERVAL_MIN", "60")) * 60
+    await asyncio.sleep(120)  # let the app settle after boot
+    while True:
+        try:
+            orders = await db.orders.find(
+                {"cj_order_id": {"$ne": None}, "status": {"$in": ["processing", "shipped"]}},
+                {"_id": 0, "id": 1},
+            ).to_list(500)
+            for o in orders:
+                try:
+                    await fulfillmod.sync_cj_order(o["id"])
+                except Exception as e:
+                    logger.error(f"auto sync failed {o['id']}: {e}")
+                await asyncio.sleep(1.0)
+            if orders:
+                logger.info(f"auto tracking sync: {len(orders)} orders checked")
+        except Exception as e:
+            logger.error(f"tracking sync loop error: {e}")
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
@@ -846,6 +905,8 @@ async def startup():
     await seed_admin()
     await seed_products()
     await seed_extras()
+    if os.environ.get("CJ_AUTO_SYNC", "true").lower() == "true":
+        asyncio.create_task(_tracking_sync_loop())
 
 
 @app.on_event("shutdown")

@@ -5,10 +5,11 @@ import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
 import BlogEditor from "@/components/BlogEditor";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 export default function Admin() {
   const { t } = useI18n();
-  const [tab, setTab] = useState("products");
+  const [tab, setTab] = useState("analytics");
   const [stats, setStats] = useState(null);
 
   const loadStats = () => api.get("/admin/stats").then((r) => setStats(r.data)).catch(() => {});
@@ -41,8 +42,10 @@ export default function Admin() {
 
         <div className="flex gap-2 border-b border-ink/10 mb-10">
           {[
+            { key: "analytics", label: t.admin.tabAnalytics },
             { key: "products", label: t.admin.tabProducts },
             { key: "orders", label: t.admin.tabOrders },
+            { key: "returns", label: t.admin.tabReturns },
             { key: "cj", label: t.admin.tabCj },
             { key: "blog", label: t.admin.tabBlog },
             { key: "messages", label: t.admin.tabMessages },
@@ -60,8 +63,10 @@ export default function Admin() {
           ))}
         </div>
 
+        {tab === "analytics" && <AnalyticsTab />}
         {tab === "products" && <ProductsTab onChange={loadStats} />}
         {tab === "orders" && <OrdersTab />}
+        {tab === "returns" && <ReturnsTab />}
         {tab === "cj" && <CjTab onImport={loadStats} />}
         {tab === "blog" && <BlogTab />}
         {tab === "messages" && <MessagesTab />}
@@ -125,9 +130,22 @@ function ProductsTab({ onChange }) {
     toast.success("OK");
   };
 
+  const [syncing, setSyncing] = useState(false);
+  const syncStocks = async () => {
+    setSyncing(true);
+    try {
+      const r = await api.post("/admin/products/sync-stock-all");
+      toast.success(`${t.admin.syncStock} (${r.data.queued})`);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSyncing(false); }
+  };
+
   return (
     <div data-testid="admin-products-tab">
-      <div className="flex justify-end mb-6">
+      <div className="flex justify-end gap-3 mb-6">
+        <button onClick={syncStocks} disabled={syncing} className="inline-flex items-center gap-2 border border-ink/20 px-5 py-3 rounded-full font-medium hover:border-ink transition-colors disabled:opacity-50" data-testid="sync-stock-btn">
+          <Download className="w-4 h-4" /> {syncing ? t.common.loading : t.admin.syncStock}
+        </button>
         <button onClick={openNew} className="inline-flex items-center gap-2 bg-ink text-cream px-5 py-3 rounded-full font-medium hover:bg-brand transition-colors" data-testid="add-product-btn">
           <Plus className="w-4 h-4" /> {t.admin.addProduct}
         </button>
@@ -675,6 +693,137 @@ function SettingsTab() {
       <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 bg-brand text-white px-8 py-3.5 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="settings-save-btn">
         <Settings className="w-4 h-4" /> {saving ? t.common.loading : t.admin.saveSettings}
       </button>
+    </div>
+  );
+}
+
+
+function AnalyticsTab() {
+  const { t } = useI18n();
+  const [d, setD] = useState(null);
+  useEffect(() => { api.get("/admin/analytics").then((r) => setD(r.data)).catch(() => {}); }, []);
+  if (!d) return <p className="text-stone py-12 text-center">{t.common.loading}</p>;
+
+  const kpis = [
+    { key: "revenue", label: t.admin.kpiRevenue, value: `${d.revenue.toFixed(2)}€` },
+    { key: "paid-orders", label: t.admin.kpiOrders, value: d.paid_orders },
+    { key: "aov", label: t.admin.kpiAov, value: `${d.aov.toFixed(2)}€` },
+    { key: "conversion", label: t.admin.kpiConversion, value: `${d.conversion_rate}%` },
+    { key: "visits", label: t.admin.kpiVisits, value: d.visits_30d },
+    { key: "customers", label: t.admin.kpiCustomers, value: d.total_customers },
+  ];
+
+  return (
+    <div data-testid="admin-analytics-tab">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-10">
+        {kpis.map((k) => (
+          <div key={k.key} className="bg-surface p-5" data-testid={`kpi-${k.key}`}>
+            <p className="text-xs tracking-[0.12em] uppercase font-bold text-stone">{k.label}</p>
+            <p className="font-display font-black text-2xl mt-2">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 border border-ink/10 p-5">
+          <p className="font-display font-bold text-lg mb-4">{t.admin.chartRevenue}</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={d.revenue_series} margin={{ left: -18, right: 8, top: 8 }}>
+              <defs>
+                <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ff3300" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#ff3300" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e2dd" />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => v.slice(5)} interval={4} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Area type="monotone" dataKey="revenue" stroke="#ff3300" strokeWidth={2} fill="url(#rev)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="border border-ink/10 p-5">
+          <p className="font-display font-bold text-lg mb-4">{t.admin.chartTop}</p>
+          {d.top_products.length === 0 ? (
+            <p className="text-stone text-sm">—</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={d.top_products} layout="vertical" margin={{ left: 10, right: 10 }}>
+                <XAxis type="number" hide />
+                <YAxis type="category" dataKey="title" tick={{ fontSize: 9 }} width={90} tickFormatter={(v) => (v || "").slice(0, 14)} />
+                <Tooltip />
+                <Bar dataKey="qty" fill="#0a0a0a" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-8">
+        {Object.entries(d.status_breakdown).map(([s, n]) => (
+          <div key={s} className="border border-ink/10 p-4 text-center">
+            <p className="font-display font-black text-xl">{n}</p>
+            <p className="text-xs text-stone uppercase tracking-wide">{s}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReturnsTab() {
+  const { t } = useI18n();
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState("");
+  const load = () => api.get("/admin/returns").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const decide = async (id, action) => {
+    const note = action === "reject" ? (window.prompt(t.admin.returnNote) || "") : "";
+    setBusy(id);
+    try {
+      const r = await api.put(`/admin/returns/${id}`, { action, admin_note: note });
+      toast.success(r.data.status + (r.data.refund?.refunded ? " · remboursé" : ""));
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(""); }
+  };
+
+  const badge = { requested: "bg-amber-100 text-amber-700", approved: "bg-blue-100 text-blue-700", refunded: "bg-emerald-100 text-emerald-700", rejected: "bg-red-100 text-red-700" };
+
+  return (
+    <div data-testid="admin-returns-tab">
+      {items.length === 0 ? (
+        <p className="text-stone py-16 text-center" data-testid="admin-returns-empty">{t.admin.noReturns}</p>
+      ) : (
+        <div className="space-y-4">
+          {items.map((r) => (
+            <div key={r.id} className="border border-ink/10 p-5" data-testid={`return-row-${r.id}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-display font-bold">#{r.order_ref} · {r.amount?.toFixed(2)}€</p>
+                  <p className="text-sm text-stone mt-1">{r.user_email} · {new Date(r.created_at).toLocaleDateString()}</p>
+                  <p className="mt-2 text-ink/80">{r.reason}</p>
+                  {r.admin_note && <p className="mt-1 text-xs text-stone">Note: {r.admin_note}</p>}
+                </div>
+                <span className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full ${badge[r.status] || "bg-gray-100"}`}>{r.status}</span>
+              </div>
+              {r.status === "requested" && (
+                <div className="flex gap-3 mt-4">
+                  <button onClick={() => decide(r.id, "approve")} disabled={busy === r.id} className="px-4 py-2 bg-brand text-white text-sm rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid={`return-approve-${r.id}`}>
+                    {t.admin.approveRefund}
+                  </button>
+                  <button onClick={() => decide(r.id, "reject")} disabled={busy === r.id} className="px-4 py-2 border border-ink/20 text-sm rounded-full font-medium hover:border-ink transition-colors disabled:opacity-50" data-testid={`return-reject-${r.id}`}>
+                    {t.admin.reject}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

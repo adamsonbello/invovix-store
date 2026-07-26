@@ -16,6 +16,7 @@ export default function ProductCard({ product, index = 0 }) {
   const title = lang === "en" ? product.title_en || product.title : product.title;
   const hasCompare = product.compare_at_price > product.price;
   const wished = has(product.id);
+  const outOfStock = product.in_stock === false;
 
   const onWish = async (e) => {
     e.preventDefault();
@@ -45,6 +46,11 @@ export default function ProductCard({ product, index = 0 }) {
               -{Math.round(((product.compare_at_price - product.price) / product.compare_at_price) * 100)}%
             </span>
           )}
+          {outOfStock && (
+            <div className="absolute inset-0 bg-cream/60 flex items-center justify-center" data-testid={`oos-${product.id}`}>
+              <span className="bg-ink text-cream text-xs font-bold tracking-wide px-3 py-1.5 uppercase">{t.product.outOfStock}</span>
+            </div>
+          )}
           <button
             onClick={onWish}
             className={`absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
@@ -55,18 +61,20 @@ export default function ProductCard({ product, index = 0 }) {
           >
             <Heart className="w-4 h-4" fill={wished ? "currentColor" : "none"} />
           </button>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              add(product, 1);
-              toast.success(t.product.added);
-            }}
-            className="absolute bottom-4 right-4 w-11 h-11 bg-ink text-cream rounded-full flex items-center justify-center opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 hover:bg-brand"
-            data-testid={`quick-add-${product.id}`}
-            aria-label="add to cart"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+          {!outOfStock && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                add(product, 1);
+                toast.success(t.product.added);
+              }}
+              className="absolute bottom-4 right-4 w-11 h-11 bg-ink text-cream rounded-full flex items-center justify-center opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 hover:bg-brand"
+              data-testid={`quick-add-${product.id}`}
+              aria-label="add to cart"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <div className="py-5 px-1">
           <div className="flex items-start justify-between gap-3">

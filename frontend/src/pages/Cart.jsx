@@ -53,25 +53,26 @@ export default function Cart() {
             {items.map((it) => {
               const title = lang === "en" ? it.title_en || it.title : it.title;
               return (
-                <div key={it.product_id} className="flex gap-5 py-6 border-t border-ink/10" data-testid={`cart-item-${it.product_id}`}>
+                <div key={it.key} className="flex gap-5 py-6 border-t border-ink/10" data-testid={`cart-item-${it.product_id}`}>
                   <img src={it.image} alt={title} className="w-24 h-28 object-cover bg-[#f0efed]" />
                   <div className="flex-1 flex flex-col justify-between">
                     <div className="flex justify-between gap-4">
                       <div>
                         <h3 className="font-display font-bold text-lg tracking-tight">{title}</h3>
+                        {it.variant_name && <p className="text-stone text-xs mt-0.5">{it.variant_name}</p>}
                         <p className="text-stone text-sm">{it.price.toFixed(2)}€ {t.cart.each}</p>
                       </div>
-                      <button onClick={() => remove(it.product_id)} className="text-stone hover:text-brand" data-testid={`remove-${it.product_id}`}>
+                      <button onClick={() => remove(it.key)} className="text-stone hover:text-brand" data-testid={`remove-${it.product_id}`}>
                         <X className="w-5 h-5" />
                       </button>
                     </div>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center border border-ink/20 rounded-full">
-                        <button onClick={() => updateQty(it.product_id, it.quantity - 1)} className="p-2.5 hover:text-brand" data-testid={`dec-${it.product_id}`}>
+                        <button onClick={() => updateQty(it.key, it.quantity - 1)} className="p-2.5 hover:text-brand" data-testid={`dec-${it.product_id}`}>
                           <Minus className="w-3.5 h-3.5" />
                         </button>
                         <span className="w-8 text-center text-sm font-medium">{it.quantity}</span>
-                        <button onClick={() => updateQty(it.product_id, it.quantity + 1)} className="p-2.5 hover:text-brand" data-testid={`inc-${it.product_id}`}>
+                        <button onClick={() => updateQty(it.key, it.quantity + 1)} className="p-2.5 hover:text-brand" data-testid={`inc-${it.product_id}`}>
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>

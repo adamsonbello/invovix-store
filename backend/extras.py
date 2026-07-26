@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from database import db
 from security import get_current_user, require_admin
+import cj as cjmod
 
 extras_router = APIRouter(prefix="/api")
 
@@ -64,7 +65,7 @@ async def related_products(product_id: str, limit: int = 4):
             {"id": {"$nin": exclude}, "active": True}, {"_id": 0}
         ).limit(limit - len(items)).to_list(limit)
         items += fill
-    return {"items": items}
+    return {"items": [cjmod.enrich_product(p) for p in items]}
 
 
 # ----------------------------- Featured reviews -----------------------------
@@ -91,7 +92,7 @@ async def get_wishlist(user: dict = Depends(get_current_user)):
     items = await db.products.find({"id": {"$in": pids}, "active": True}, {"_id": 0}).to_list(200)
     order = {pid: i for i, pid in enumerate(pids)}
     items.sort(key=lambda x: order.get(x["id"], 0))
-    return {"items": items, "product_ids": pids}
+    return {"items": [cjmod.enrich_product(p) for p in items], "product_ids": pids}
 
 
 @extras_router.post("/wishlist/{product_id}")
