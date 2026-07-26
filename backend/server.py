@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field, EmailStr
 from database import db, client
 from security import (
     hash_password, verify_password, create_access_token,
-    get_current_user, require_admin,
+    get_current_user, require_admin, require_area,
+    create_2fa_token, decode_2fa_token,
 )
 import cj as cjmod
 import brevo as brevomod
@@ -30,6 +31,9 @@ from crm import crm_router, run_abandoned_recovery
 import marketing as mktmod
 from marketing import marketing_router
 from notifications import notif_router
+import staff as staffmod
+from staff import staff_router
+import twofa as twofamod
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -90,6 +94,11 @@ class RegisterInput(BaseModel):
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+
+
+class TwoFALoginInput(BaseModel):
+    temp_token: str
+    code: str
 
 
 class ProductInput(BaseModel):
@@ -178,7 +187,8 @@ class BlogInput(BaseModel):
 
 # ----------------------------- Auth -----------------------------
 def _public_user(u: dict) -> dict:
-    return {"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"]}
+    return {"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
+            "twofa_enabled": bool(u.get("twofa_enabled"))}
 
 
 @api.post("/auth/register")
@@ -200,12 +210,31 @@ async def register(body: RegisterInput):
 
 
 @api.post("/auth/login")
-async def login(body: LoginInput):
+async def login(body: LoginInput, request: Request):
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
+        await staffmod.record_login(request, email, False, user["id"] if user else "", user.get("role", "") if user else "")
         raise HTTPException(401, "Email ou mot de passe incorrect")
+    # 2FA gate for staff accounts
+    if user.get("twofa_enabled"):
+        await staffmod.record_login(request, email, True, user["id"], user.get("role", ""))
+        return {"twofa_required": True, "temp_token": create_2fa_token(user["id"])}
+    await staffmod.record_login(request, email, True, user["id"], user.get("role", ""))
     token = create_access_token(user["id"], email, user["role"])
+    return {"token": token, "user": _public_user(user)}
+
+
+@api.post("/auth/2fa/login")
+async def twofa_login(body: TwoFALoginInput, request: Request):
+    user_id = decode_2fa_token(body.temp_token)
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(404, "Utilisateur introuvable")
+    if not twofamod.verify_code(user.get("twofa_secret", ""), body.code):
+        await staffmod.record_login(request, user["email"], False, user["id"], user.get("role", ""))
+        raise HTTPException(400, "Code 2FA invalide")
+    token = create_access_token(user["id"], user["email"], user["role"])
     return {"token": token, "user": _public_user(user)}
 
 
@@ -262,7 +291,7 @@ async def get_product(product_id: str):
 
 
 @api.post("/admin/products")
-async def create_product(body: ProductInput, admin: dict = Depends(require_admin)):
+async def create_product(body: ProductInput, admin: dict = Depends(require_area("catalog"))):
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["title_en"] = doc.get("title_en") or doc["title"]
@@ -274,7 +303,7 @@ async def create_product(body: ProductInput, admin: dict = Depends(require_admin
 
 
 @api.put("/admin/products/{product_id}")
-async def update_product(product_id: str, body: ProductInput, admin: dict = Depends(require_admin)):
+async def update_product(product_id: str, body: ProductInput, admin: dict = Depends(require_area("catalog"))):
     res = await db.products.update_one({"id": product_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Produit introuvable")
@@ -282,7 +311,7 @@ async def update_product(product_id: str, body: ProductInput, admin: dict = Depe
 
 
 @api.delete("/admin/products/{product_id}")
-async def delete_product(product_id: str, admin: dict = Depends(require_admin)):
+async def delete_product(product_id: str, admin: dict = Depends(require_area("catalog"))):
     await db.products.delete_one({"id": product_id})
     return {"ok": True}
 
@@ -374,7 +403,7 @@ async def contact(body: ContactInput, request: Request, background_tasks: Backgr
 
 
 @api.get("/admin/contacts")
-async def list_contacts(admin: dict = Depends(require_admin)):
+async def list_contacts(admin: dict = Depends(require_area("support"))):
     items = await db.contacts.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items}
 
@@ -390,7 +419,7 @@ BLOG_DIR = "/app/frontend/public/blog"
 
 
 @api.post("/admin/upload")
-async def upload_image(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+async def upload_image(file: UploadFile = File(...), admin: dict = Depends(require_area("catalog"))):
     os.makedirs(BLOG_DIR, exist_ok=True)
     ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "png").lower()
     if ext not in ["png", "jpg", "jpeg", "webp", "gif"]:
@@ -420,13 +449,13 @@ async def get_blog(slug: str):
 
 
 @api.get("/admin/blog")
-async def admin_list_blog(admin: dict = Depends(require_admin)):
+async def admin_list_blog(admin: dict = Depends(require_area("content"))):
     items = await db.blog_posts.find({}, {"_id": 0, "content": 0}).sort("created_at", -1).to_list(500)
     return {"items": items}
 
 
 @api.get("/admin/blog/{post_id}")
-async def admin_get_blog(post_id: str, admin: dict = Depends(require_admin)):
+async def admin_get_blog(post_id: str, admin: dict = Depends(require_area("content"))):
     p = await db.blog_posts.find_one({"id": post_id}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Article introuvable")
@@ -434,7 +463,7 @@ async def admin_get_blog(post_id: str, admin: dict = Depends(require_admin)):
 
 
 @api.post("/admin/blog")
-async def create_blog(body: BlogInput, admin: dict = Depends(require_admin)):
+async def create_blog(body: BlogInput, admin: dict = Depends(require_area("content"))):
     slug = _slugify(body.title)
     if await db.blog_posts.find_one({"slug": slug}):
         slug = f"{slug}-{uuid.uuid4().hex[:6]}"
@@ -446,7 +475,7 @@ async def create_blog(body: BlogInput, admin: dict = Depends(require_admin)):
 
 
 @api.put("/admin/blog/{post_id}")
-async def update_blog(post_id: str, body: BlogInput, admin: dict = Depends(require_admin)):
+async def update_blog(post_id: str, body: BlogInput, admin: dict = Depends(require_area("content"))):
     update = body.model_dump()
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     res = await db.blog_posts.update_one({"id": post_id}, {"$set": update})
@@ -456,7 +485,7 @@ async def update_blog(post_id: str, body: BlogInput, admin: dict = Depends(requi
 
 
 @api.delete("/admin/blog/{post_id}")
-async def delete_blog(post_id: str, admin: dict = Depends(require_admin)):
+async def delete_blog(post_id: str, admin: dict = Depends(require_area("content"))):
     await db.blog_posts.delete_one({"id": post_id})
     return {"ok": True}
 
@@ -587,7 +616,7 @@ async def get_order(order_id: str, user: dict = Depends(get_current_user)):
 
 # ----------------------------- Admin -----------------------------
 @api.get("/admin/stats")
-async def admin_stats(admin: dict = Depends(require_admin)):
+async def admin_stats(admin: dict = Depends(require_area("analytics"))):
     total_orders = await db.orders.count_documents({})
     paid_orders = await db.orders.count_documents({"payment_status": "paid"})
     total_products = await db.products.count_documents({})
@@ -604,13 +633,13 @@ async def admin_stats(admin: dict = Depends(require_admin)):
 
 
 @api.get("/admin/orders")
-async def admin_orders(admin: dict = Depends(require_admin)):
+async def admin_orders(admin: dict = Depends(require_area("orders"))):
     items = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items}
 
 
 @api.put("/admin/orders/{order_id}/status")
-async def admin_update_order(order_id: str, background_tasks: BackgroundTasks, status: str = Query(...), admin: dict = Depends(require_admin)):
+async def admin_update_order(order_id: str, background_tasks: BackgroundTasks, status: str = Query(...), admin: dict = Depends(require_area("orders"))):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Commande introuvable")
@@ -636,7 +665,7 @@ async def admin_update_order(order_id: str, background_tasks: BackgroundTasks, s
 
 
 @api.post("/admin/orders/{order_id}/fulfill")
-async def admin_fulfill_order(order_id: str, admin: dict = Depends(require_admin)):
+async def admin_fulfill_order(order_id: str, admin: dict = Depends(require_area("orders"))):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Commande introuvable")
@@ -650,18 +679,18 @@ async def admin_fulfill_order(order_id: str, admin: dict = Depends(require_admin
 
 
 @api.post("/admin/orders/{order_id}/sync-cj")
-async def admin_sync_cj(order_id: str, admin: dict = Depends(require_admin)):
+async def admin_sync_cj(order_id: str, admin: dict = Depends(require_area("orders"))):
     return await fulfillmod.sync_cj_order(order_id)
 
 
 # ----------------------------- CJ Dropshipping (admin) -----------------------------
 @api.get("/admin/cj/status")
-async def cj_status(admin: dict = Depends(require_admin)):
+async def cj_status(admin: dict = Depends(require_area("cj"))):
     return {"configured": cjmod.cj_configured()}
 
 
 @api.get("/admin/cj/search")
-async def cj_search(q: str = "", page: int = 1, admin: dict = Depends(require_admin)):
+async def cj_search(q: str = "", page: int = 1, admin: dict = Depends(require_area("cj"))):
     if not cjmod.cj_configured():
         raise HTTPException(503, "Clé API CJDropshipping non configurée")
     try:
@@ -710,7 +739,7 @@ async def _do_import(pid: str, margin: float, category: str, featured: bool = Fa
 
 
 @api.post("/admin/cj/import/{pid}")
-async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: float = 60, category: str = "smart-home", featured: bool = False, optimize: bool = False):
+async def cj_import(pid: str, admin: dict = Depends(require_area("cj")), margin: float = 60, category: str = "smart-home", featured: bool = False, optimize: bool = False):
     if not cjmod.cj_configured():
         raise HTTPException(503, "Clé API CJDropshipping non configurée")
     try:
@@ -730,7 +759,7 @@ async def cj_import(pid: str, admin: dict = Depends(require_admin), margin: floa
 
 
 @api.post("/admin/cj/import-bulk")
-async def cj_import_bulk(body: BulkImportInput, admin: dict = Depends(require_admin)):
+async def cj_import_bulk(body: BulkImportInput, admin: dict = Depends(require_area("cj"))):
     if not cjmod.cj_configured():
         raise HTTPException(503, "Clé API CJDropshipping non configurée")
     results = []
@@ -819,6 +848,7 @@ app.include_router(erp_router)
 app.include_router(crm_router)
 app.include_router(marketing_router)
 app.include_router(notif_router)
+app.include_router(staff_router)
 
 app.add_middleware(
     CORSMiddleware,

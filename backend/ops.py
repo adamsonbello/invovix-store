@@ -12,7 +12,7 @@ from typing import Optional
 import stripe
 
 from database import db
-from security import get_current_user, require_admin
+from security import get_current_user, require_admin, require_area
 from extras import get_settings_doc
 import cj as cjmod
 import brevo as brevomod
@@ -35,7 +35,7 @@ async def track_pageview():
 
 
 @ops_router.get("/admin/analytics")
-async def analytics(admin: dict = Depends(require_admin)):
+async def analytics(admin: dict = Depends(require_area("analytics"))):
     paid = await db.orders.find({"payment_status": "paid"}, {"_id": 0}).to_list(20000)
     revenue = round(sum(o.get("total", 0) for o in paid), 2)
     paid_count = len(paid)
@@ -147,7 +147,7 @@ async def analytics(admin: dict = Depends(require_admin)):
 
 # ----------------------------- Stock sync -----------------------------
 @ops_router.post("/admin/products/{product_id}/sync-stock")
-async def sync_stock(product_id: str, admin: dict = Depends(require_admin)):
+async def sync_stock(product_id: str, admin: dict = Depends(require_area("catalog"))):
     p = await db.products.find_one({"id": product_id}, {"_id": 0})
     if not p:
         raise HTTPException(404, "Produit introuvable")
@@ -166,7 +166,7 @@ async def _sync_all_stock():
 
 
 @ops_router.post("/admin/products/sync-stock-all")
-async def sync_stock_all(admin: dict = Depends(require_admin)):
+async def sync_stock_all(admin: dict = Depends(require_area("catalog"))):
     count = await db.products.count_documents({"source": "cjdropshipping"})
     asyncio.create_task(_sync_all_stock())
     return {"ok": True, "queued": count}
@@ -217,7 +217,7 @@ async def my_returns(user: dict = Depends(get_current_user)):
 
 
 @ops_router.get("/admin/returns")
-async def list_returns(admin: dict = Depends(require_admin)):
+async def list_returns(admin: dict = Depends(require_area("orders"))):
     items = await db.returns.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return {"items": items}
 
@@ -239,7 +239,7 @@ async def _stripe_refund(order_id: str, amount: float) -> dict:
 
 
 @ops_router.put("/admin/returns/{return_id}")
-async def decide_return(return_id: str, body: ReturnDecision, admin: dict = Depends(require_admin)):
+async def decide_return(return_id: str, body: ReturnDecision, admin: dict = Depends(require_area("orders"))):
     ret = await db.returns.find_one({"id": return_id}, {"_id": 0})
     if not ret:
         raise HTTPException(404, "Demande introuvable")
@@ -424,7 +424,7 @@ async def order_invoice(order_id: str, user: dict = Depends(get_current_user)):
 
 # ----------------------------- e-reporting B2C (transmission des données) -----------------------------
 @ops_router.get("/admin/ereporting")
-async def ereporting(admin: dict = Depends(require_admin), days: int = 90, format: str = "json"):
+async def ereporting(admin: dict = Depends(require_area("analytics")), days: int = 90, format: str = "json"):
     """Aggregated B2C transaction data (per day × VAT rate) for transmission to a PDP/PPF.
     Conforme à l'obligation de e-reporting des ventes aux particuliers."""
     settings = await get_settings_doc()

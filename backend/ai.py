@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from database import db
-from security import require_admin
+from security import require_admin, require_area
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 logger = logging.getLogger("invovix")
@@ -77,7 +77,7 @@ class RewriteInput(BaseModel):
 
 
 @ai_router.post("/admin/ai/rewrite-product")
-async def rewrite_product(body: RewriteInput, admin: dict = Depends(require_admin)):
+async def rewrite_product(body: RewriteInput, admin: dict = Depends(require_area("ai"))):
     data = await run_rewrite(body.title, body.description, body.category, body.keywords_hint, body.model)
     if not data:
         raise HTTPException(502, "Réponse IA illisible, réessayez")
@@ -130,7 +130,7 @@ class GenImageInput(BaseModel):
 
 
 @ai_router.post("/admin/ai/generate-image")
-async def generate_image(body: GenImageInput, admin: dict = Depends(require_admin)):
+async def generate_image(body: GenImageInput, admin: dict = Depends(require_area("ai"))):
     product = None
     if body.product_id:
         product = await db.products.find_one({"id": body.product_id}, {"_id": 0})
@@ -190,7 +190,7 @@ class ScoreInput(BaseModel):
 
 
 @ai_router.post("/admin/ai/product-score")
-async def product_score(body: ScoreInput, admin: dict = Depends(require_admin)):
+async def product_score(body: ScoreInput, admin: dict = Depends(require_area("ai"))):
     data = await run_score(body.title, body.description, body.category, body.sell_price, body.cost_price, body.model)
     if not data:
         raise HTTPException(502, "Réponse IA illisible, réessayez")
@@ -294,7 +294,7 @@ async def optimize_product_core(product_id: str, rewrite: bool = True, image: bo
 
 
 @ai_router.post("/admin/ai/optimize-product/{product_id}")
-async def optimize_product(product_id: str, body: OptimizeInput, admin: dict = Depends(require_admin)):
+async def optimize_product(product_id: str, body: OptimizeInput, admin: dict = Depends(require_area("ai"))):
     return await optimize_product_core(product_id, body.rewrite, body.image, body.score, body.image_style, body.model)
 
 
@@ -344,7 +344,7 @@ class AnalyzeInput(BaseModel):
 
 
 @ai_router.post("/admin/ai/analyze")
-async def analyze(body: AnalyzeInput, admin: dict = Depends(require_admin)):
+async def analyze(body: AnalyzeInput, admin: dict = Depends(require_area("ai"))):
     ctx = await _gather_business_context()
     system = (
         "Tu es l'analyste business IA d'Invovix, une boutique de dropshipping (domotique & "
@@ -362,5 +362,5 @@ Question de l'administrateur :
 
 
 @ai_router.get("/admin/ai/status")
-async def ai_status(admin: dict = Depends(require_admin)):
+async def ai_status(admin: dict = Depends(require_area("ai"))):
     return {"configured": bool(EMERGENT_LLM_KEY), "text_model": TEXT_MODEL, "image_model": IMAGE_MODEL}

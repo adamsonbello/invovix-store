@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from database import db
-from security import get_current_user, require_admin
+from security import get_current_user, require_admin, require_area
 import brevo as brevomod
 
 logger = logging.getLogger("invovix")
@@ -93,7 +93,7 @@ async def _customer_summary(u: dict) -> dict:
 
 
 @crm_router.get("/admin/customers")
-async def list_customers(admin: dict = Depends(require_admin), q: str = "", segment: str = ""):
+async def list_customers(admin: dict = Depends(require_area("marketing")), q: str = "", segment: str = ""):
     query = {"role": "customer"}
     if q:
         query["$or"] = [{"email": {"$regex": q, "$options": "i"}}, {"name": {"$regex": q, "$options": "i"}}]
@@ -110,7 +110,7 @@ async def list_customers(admin: dict = Depends(require_admin), q: str = "", segm
 
 
 @crm_router.get("/admin/customers/{customer_id}")
-async def customer_detail(customer_id: str, admin: dict = Depends(require_admin)):
+async def customer_detail(customer_id: str, admin: dict = Depends(require_area("marketing"))):
     u = await db.users.find_one({"id": customer_id}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Client introuvable")
@@ -179,7 +179,7 @@ async def run_abandoned_recovery() -> dict:
 
 
 @crm_router.get("/admin/abandoned")
-async def list_abandoned(admin: dict = Depends(require_admin)):
+async def list_abandoned(admin: dict = Depends(require_area("marketing"))):
     orders = await _find_abandoned(all_pending=True)
     potential = round(sum(o.get("total", 0) for o in orders), 2)
     reminded = sum(1 for o in orders if o.get("abandoned_email_sent"))
@@ -199,7 +199,7 @@ async def list_abandoned(admin: dict = Depends(require_admin)):
 
 
 @crm_router.post("/admin/abandoned/{order_id}/remind")
-async def remind_abandoned(order_id: str, admin: dict = Depends(require_admin)):
+async def remind_abandoned(order_id: str, admin: dict = Depends(require_area("marketing"))):
     o = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not o:
         raise HTTPException(404, "Commande introuvable")
@@ -212,5 +212,5 @@ async def remind_abandoned(order_id: str, admin: dict = Depends(require_admin)):
 
 
 @crm_router.post("/admin/abandoned/run")
-async def run_abandoned_endpoint(admin: dict = Depends(require_admin)):
+async def run_abandoned_endpoint(admin: dict = Depends(require_area("marketing"))):
     return await run_abandoned_recovery()

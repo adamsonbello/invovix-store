@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database import db
-from security import require_admin
+from security import require_admin, require_area
 
 logger = logging.getLogger("invovix")
 erp_router = APIRouter(prefix="/api")
@@ -53,7 +53,7 @@ def _supplier_score(s: dict) -> float:
 
 
 @erp_router.get("/admin/suppliers")
-async def list_suppliers(admin: dict = Depends(require_admin)):
+async def list_suppliers(admin: dict = Depends(require_area("operations"))):
     items = await db.suppliers.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     for s in items:
         s["score"] = _supplier_score(s)
@@ -62,7 +62,7 @@ async def list_suppliers(admin: dict = Depends(require_admin)):
 
 
 @erp_router.get("/admin/suppliers/compare")
-async def compare_suppliers(admin: dict = Depends(require_admin)):
+async def compare_suppliers(admin: dict = Depends(require_area("operations"))):
     items = await db.suppliers.find({}, {"_id": 0}).to_list(1000)
     for s in items:
         s["score"] = _supplier_score(s)
@@ -71,7 +71,7 @@ async def compare_suppliers(admin: dict = Depends(require_admin)):
 
 
 @erp_router.post("/admin/suppliers")
-async def create_supplier(body: SupplierInput, admin: dict = Depends(require_admin)):
+async def create_supplier(body: SupplierInput, admin: dict = Depends(require_area("operations"))):
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = _now()
@@ -82,7 +82,7 @@ async def create_supplier(body: SupplierInput, admin: dict = Depends(require_adm
 
 
 @erp_router.put("/admin/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, body: SupplierInput, admin: dict = Depends(require_admin)):
+async def update_supplier(supplier_id: str, body: SupplierInput, admin: dict = Depends(require_area("operations"))):
     res = await db.suppliers.update_one({"id": supplier_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Fournisseur introuvable")
@@ -92,7 +92,7 @@ async def update_supplier(supplier_id: str, body: SupplierInput, admin: dict = D
 
 
 @erp_router.delete("/admin/suppliers/{supplier_id}")
-async def delete_supplier(supplier_id: str, admin: dict = Depends(require_admin)):
+async def delete_supplier(supplier_id: str, admin: dict = Depends(require_area("operations"))):
     await db.suppliers.delete_one({"id": supplier_id})
     return {"ok": True}
 
@@ -112,13 +112,13 @@ class RuleInput(BaseModel):
 
 
 @erp_router.get("/admin/rules")
-async def list_rules(admin: dict = Depends(require_admin)):
+async def list_rules(admin: dict = Depends(require_area("operations"))):
     items = await db.rules.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return {"items": items}
 
 
 @erp_router.post("/admin/rules")
-async def create_rule(body: RuleInput, admin: dict = Depends(require_admin)):
+async def create_rule(body: RuleInput, admin: dict = Depends(require_area("operations"))):
     if body.cond_type not in COND_TYPES:
         raise HTTPException(400, "Condition invalide")
     if body.action_type not in ACTION_TYPES:
@@ -132,7 +132,7 @@ async def create_rule(body: RuleInput, admin: dict = Depends(require_admin)):
 
 
 @erp_router.put("/admin/rules/{rule_id}")
-async def update_rule(rule_id: str, body: RuleInput, admin: dict = Depends(require_admin)):
+async def update_rule(rule_id: str, body: RuleInput, admin: dict = Depends(require_area("operations"))):
     res = await db.rules.update_one({"id": rule_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Règle introuvable")
@@ -140,7 +140,7 @@ async def update_rule(rule_id: str, body: RuleInput, admin: dict = Depends(requi
 
 
 @erp_router.delete("/admin/rules/{rule_id}")
-async def delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
+async def delete_rule(rule_id: str, admin: dict = Depends(require_area("operations"))):
     await db.rules.delete_one({"id": rule_id})
     return {"ok": True}
 
@@ -206,25 +206,25 @@ async def run_rules() -> dict:
 
 
 @erp_router.post("/admin/rules/run")
-async def run_rules_endpoint(admin: dict = Depends(require_admin)):
+async def run_rules_endpoint(admin: dict = Depends(require_area("operations"))):
     return await run_rules()
 
 
 # ----------------------------- Alertes -----------------------------
 @erp_router.get("/admin/alerts")
-async def list_alerts(admin: dict = Depends(require_admin), include_resolved: bool = False):
+async def list_alerts(admin: dict = Depends(require_area("operations")), include_resolved: bool = False):
     q = {} if include_resolved else {"resolved": False}
     items = await db.alerts.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items, "unresolved": await db.alerts.count_documents({"resolved": False})}
 
 
 @erp_router.put("/admin/alerts/{alert_id}/resolve")
-async def resolve_alert(alert_id: str, admin: dict = Depends(require_admin)):
+async def resolve_alert(alert_id: str, admin: dict = Depends(require_area("operations"))):
     await db.alerts.update_one({"id": alert_id}, {"$set": {"resolved": True, "resolved_at": _now()}})
     return {"ok": True}
 
 
 @erp_router.post("/admin/alerts/clear")
-async def clear_alerts(admin: dict = Depends(require_admin)):
+async def clear_alerts(admin: dict = Depends(require_area("operations"))):
     await db.alerts.update_many({"resolved": False}, {"$set": {"resolved": True, "resolved_at": _now()}})
     return {"ok": True}

@@ -11,9 +11,40 @@ export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState("analytics");
   const [stats, setStats] = useState(null);
+  const [perms, setPerms] = useState(null);
 
   const loadStats = () => api.get("/admin/stats").then((r) => setStats(r.data)).catch(() => {});
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { loadStats(); api.get("/auth/permissions").then((r) => setPerms(r.data)).catch(() => setPerms({ permissions: [], is_admin: false, is_staff: true })); }, []);
+
+  const can = (area) => {
+    if (!perms) return false;
+    if (perms.is_admin || perms.permissions === "all") return true;
+    return Array.isArray(perms.permissions) && perms.permissions.includes(area);
+  };
+
+  const ALL_TABS = [
+    { key: "analytics", label: t.admin.tabAnalytics, area: "analytics" },
+    { key: "ai", label: t.admin.tabAi, area: "ai" },
+    { key: "products", label: t.admin.tabProducts, area: "catalog" },
+    { key: "orders", label: t.admin.tabOrders, area: "orders" },
+    { key: "returns", label: t.admin.tabReturns, area: "orders" },
+    { key: "suppliers", label: "Fournisseurs", area: "operations" },
+    { key: "rules", label: "Règles & Alertes", area: "operations" },
+    { key: "cj", label: t.admin.tabCj, area: "cj" },
+    { key: "blog", label: t.admin.tabBlog, area: "content" },
+    { key: "messages", label: t.admin.tabMessages, area: "support" },
+    { key: "promos", label: t.admin.tabPromos, area: "marketing" },
+    { key: "marketing", label: "Marketing & CRM", area: "marketing" },
+    { key: "security", label: "Sécurité", area: "_staff" },
+    { key: "settings", label: t.admin.tabSettings, area: "settings" },
+  ];
+  const visibleTabs = ALL_TABS.filter((tb) => tb.area === "_staff" ? true : can(tb.area));
+
+  useEffect(() => {
+    if (perms && visibleTabs.length && !visibleTabs.some((tb) => tb.key === tab)) {
+      setTab(visibleTabs[0].key);
+    }
+  }, [perms]); // eslint-disable-line
 
   const cards = stats
     ? [
@@ -40,26 +71,12 @@ export default function Admin() {
           ))}
         </div>
 
-        <div className="flex gap-2 border-b border-ink/10 mb-10">
-          {[
-            { key: "analytics", label: t.admin.tabAnalytics },
-            { key: "ai", label: t.admin.tabAi },
-            { key: "products", label: t.admin.tabProducts },
-            { key: "orders", label: t.admin.tabOrders },
-            { key: "returns", label: t.admin.tabReturns },
-            { key: "suppliers", label: "Fournisseurs" },
-            { key: "rules", label: "Règles & Alertes" },
-            { key: "cj", label: t.admin.tabCj },
-            { key: "blog", label: t.admin.tabBlog },
-            { key: "messages", label: t.admin.tabMessages },
-            { key: "promos", label: t.admin.tabPromos },
-            { key: "marketing", label: "Marketing & CRM" },
-            { key: "settings", label: t.admin.tabSettings },
-          ].map((tb) => (
+        <div className="flex gap-2 border-b border-ink/10 mb-10 overflow-x-auto">
+          {visibleTabs.map((tb) => (
             <button
               key={tb.key}
               onClick={() => setTab(tb.key)}
-              className={`px-5 py-3 font-medium border-b-2 -mb-px transition-colors ${tab === tb.key ? "border-brand text-ink" : "border-transparent text-stone hover:text-ink"}`}
+              className={`px-5 py-3 font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${tab === tb.key ? "border-brand text-ink" : "border-transparent text-stone hover:text-ink"}`}
               data-testid={`admin-tab-${tb.key}`}
             >
               {tb.label}
@@ -79,6 +96,7 @@ export default function Admin() {
         {tab === "messages" && <MessagesTab />}
         {tab === "promos" && <PromosTab />}
         {tab === "marketing" && <MarketingTab />}
+        {tab === "security" && <SecurityTab perms={perms} />}
         {tab === "settings" && <SettingsTab />}
       </div>
     </div>
@@ -1808,6 +1826,160 @@ function AbandonedPanel() {
             <button onClick={() => remind(o.id)} disabled={busy === o.id} className="text-sm border border-ink/20 rounded-full px-4 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`abandoned-remind-${o.id}`}>
               {busy === o.id ? "…" : "Relancer"}
             </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SecurityTab({ perms }) {
+  const isAdmin = perms?.is_admin;
+  return (
+    <div className="space-y-12" data-testid="admin-security-tab">
+      <TwoFAPanel enabled={perms?.twofa_enabled} />
+      {isAdmin && <StaffPanel />}
+      {isAdmin && <LoginJournalPanel />}
+    </div>
+  );
+}
+
+function TwoFAPanel({ enabled }) {
+  const [state, setState] = useState(enabled ? "on" : "off");
+  const [setup, setSetup] = useState(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const startSetup = async () => {
+    setBusy(true);
+    try { const r = await api.post("/auth/2fa/setup"); setSetup(r.data); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+  const enable = async () => {
+    setBusy(true);
+    try { await api.post("/auth/2fa/enable", { code }); toast.success("2FA activée"); setState("on"); setSetup(null); setCode(""); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+  const disable = async () => {
+    setBusy(true);
+    try { await api.post("/auth/2fa/disable", { code }); toast.success("2FA désactivée"); setState("off"); setCode(""); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="border border-ink/10 p-6 max-w-xl" data-testid="twofa-panel">
+      <div className="flex items-center justify-between mb-4">
+        <p className="font-display font-bold text-lg">Double authentification (2FA)</p>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${state === "on" ? "bg-emerald-100 text-emerald-700" : "bg-ink/5 text-stone"}`} data-testid="twofa-status">{state === "on" ? "Activée" : "Désactivée"}</span>
+      </div>
+      {state === "off" && !setup && (
+        <div>
+          <p className="text-stone text-sm mb-4">Protégez votre compte avec une application d'authentification (Google Authenticator, Authy…).</p>
+          <button onClick={startSetup} disabled={busy} className="bg-ink text-cream px-5 py-2.5 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="twofa-start-btn">Activer la 2FA</button>
+        </div>
+      )}
+      {state === "off" && setup && (
+        <div className="space-y-4">
+          <p className="text-sm text-stone">1. Scannez ce QR code avec votre application d'authentification :</p>
+          <img src={setup.qr} alt="QR 2FA" className="w-44 h-44 border border-ink/10" data-testid="twofa-qr" />
+          <p className="text-xs text-stone">Ou saisissez la clé : <code className="bg-ink/5 px-2 py-1">{setup.secret}</code></p>
+          <p className="text-sm text-stone">2. Entrez le code à 6 chiffres généré :</p>
+          <div className="flex gap-2">
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} maxLength={6} placeholder="123456" className="px-4 py-2.5 border border-ink/20 bg-transparent outline-none tracking-[0.3em] text-center" data-testid="twofa-code" />
+            <button onClick={enable} disabled={busy} className="bg-brand text-white px-5 py-2.5 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="twofa-enable-btn">Confirmer</button>
+          </div>
+        </div>
+      )}
+      {state === "on" && (
+        <div className="space-y-3">
+          <p className="text-stone text-sm">Votre compte est protégé. Pour désactiver, saisissez un code actuel :</p>
+          <div className="flex gap-2">
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} maxLength={6} placeholder="123456" className="px-4 py-2.5 border border-ink/20 bg-transparent outline-none tracking-[0.3em] text-center" data-testid="twofa-disable-code" />
+            <button onClick={disable} disabled={busy} className="border border-brand text-brand px-5 py-2.5 rounded-full font-medium hover:bg-brand hover:text-white transition-colors disabled:opacity-50" data-testid="twofa-disable-btn">Désactiver</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_STAFF = { email: "", name: "", password: "", role: "support" };
+function StaffPanel() {
+  const [items, setItems] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [rolePerms, setRolePerms] = useState({});
+  const [form, setForm] = useState(EMPTY_STAFF);
+  const load = () => api.get("/admin/staff").then((r) => { setItems(r.data.items); setRoles(r.data.roles); setRolePerms(r.data.role_permissions || {}); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const create = async (e) => {
+    e.preventDefault();
+    if (!form.email || !form.name || !form.password) { toast.error("Tous les champs sont requis"); return; }
+    try { await api.post("/admin/staff", form); toast.success("Membre ajouté"); setForm(EMPTY_STAFF); load(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const changeRole = async (id, role) => { try { await api.put(`/admin/staff/${id}/role`, { role }); toast.success("Rôle mis à jour"); load(); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } };
+  const del = async (id) => { try { await api.delete(`/admin/staff/${id}`); load(); } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); } };
+  return (
+    <div data-testid="staff-panel">
+      <p className="font-display font-bold text-lg mb-4">Personnel & rôles</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <form onSubmit={create} className="space-y-3 border border-ink/10 p-5 h-fit">
+          <p className="font-medium">Ajouter un membre</p>
+          <In label="Nom" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+          <In label="Email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+          <In label="Mot de passe" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+          <div>
+            <label className="text-xs uppercase font-bold text-stone mb-2 block">Rôle</label>
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="staff-role-select">
+              {roles.filter((r) => r !== "admin").map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            {rolePerms[form.role] && <p className="text-stone text-xs mt-2">Accès : {rolePerms[form.role].join(", ")}</p>}
+          </div>
+          <button type="submit" className="w-full bg-brand text-white py-3 rounded-full font-medium hover:bg-ink transition-colors" data-testid="staff-create-btn">Ajouter</button>
+        </form>
+        <div className="lg:col-span-2 border border-ink/10 divide-y divide-ink/10 h-fit">
+          {items.length === 0 && <p className="p-6 text-stone text-sm">Aucun membre du personnel.</p>}
+          {items.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center gap-3 p-4" data-testid={`staff-${s.id}`}>
+              <div className="flex-1 min-w-[160px]">
+                <p className="font-medium">{s.name} {s.twofa_enabled && <span className="text-xs text-emerald-600">🔒 2FA</span>}</p>
+                <p className="text-stone text-sm">{s.email}</p>
+              </div>
+              {s.role === "admin" ? (
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-brand/10 text-brand">admin</span>
+              ) : (
+                <select value={s.role} onChange={(e) => changeRole(s.id, e.target.value)} className="px-3 py-1.5 border border-ink/20 bg-transparent outline-none text-sm" data-testid={`staff-role-${s.id}`}>
+                  {roles.filter((r) => r !== "admin").map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              )}
+              {s.role !== "admin" && <button onClick={() => del(s.id)} className="text-brand hover:opacity-70 p-2" data-testid={`staff-delete-${s.id}`}><Trash2 className="w-4 h-4" /></button>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginJournalPanel() {
+  const [data, setData] = useState(null);
+  useEffect(() => { api.get("/admin/login-journal?limit=50").then((r) => setData(r.data)).catch(() => {}); }, []);
+  if (!data) return null;
+  return (
+    <div data-testid="login-journal-panel">
+      <div className="flex items-center justify-between mb-4">
+        <p className="font-display font-bold text-lg">Journal des connexions</p>
+        {data.failed_24h > 0 && <span className="text-xs font-bold text-brand">{data.failed_24h} échec(s) sur 24h</span>}
+      </div>
+      <div className="border border-ink/10 divide-y divide-ink/10 max-h-96 overflow-auto">
+        {data.items.map((e) => (
+          <div key={e.id} className="flex flex-wrap items-center gap-3 p-3 text-sm" data-testid={`login-event-${e.id}`}>
+            <span className={`w-2 h-2 rounded-full ${e.success ? "bg-emerald-500" : "bg-brand"}`} />
+            <span className="font-medium min-w-[180px]">{e.email}</span>
+            <span className="text-stone">{e.role || "—"}</span>
+            <span className="text-stone">{e.ip}</span>
+            <span className="ml-auto text-stone text-xs">{new Date(e.created_at).toLocaleString()}</span>
           </div>
         ))}
       </div>

@@ -11,6 +11,7 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
       </div>
     );
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && user.role !== "admin") return <Navigate to="/" replace />;
+  const STAFF = ["admin", "manager", "marketing", "support", "accounting"];
+  if (adminOnly && !STAFF.includes(user.role)) return <Navigate to="/" replace />;
   return children;
 }

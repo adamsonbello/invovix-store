@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from database import db
-from security import require_admin
+from security import require_admin, require_area
 import brevo as brevomod
 
 logger = logging.getLogger("invovix")
@@ -61,13 +61,13 @@ async def _send_campaign(campaign_id: str, subject: str, body_html: str, recipie
 
 
 @marketing_router.get("/admin/campaigns")
-async def list_campaigns(admin: dict = Depends(require_admin)):
+async def list_campaigns(admin: dict = Depends(require_area("marketing"))):
     items = await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items}
 
 
 @marketing_router.post("/admin/campaigns")
-async def create_campaign(body: CampaignInput, background_tasks: BackgroundTasks, admin: dict = Depends(require_admin)):
+async def create_campaign(body: CampaignInput, background_tasks: BackgroundTasks, admin: dict = Depends(require_area("marketing"))):
     if body.segment not in ("newsletter", "customers", "vip", "all"):
         raise HTTPException(400, "Segment invalide")
     recipients = await _recipients(body.segment)
@@ -84,7 +84,7 @@ async def create_campaign(body: CampaignInput, background_tasks: BackgroundTasks
 
 
 @marketing_router.get("/admin/segments/count")
-async def segment_counts(admin: dict = Depends(require_admin)):
+async def segment_counts(admin: dict = Depends(require_area("marketing"))):
     return {s: len(await _recipients(s)) for s in ("newsletter", "customers", "vip", "all")}
 
 
@@ -118,13 +118,13 @@ async def public_bundles():
 
 
 @marketing_router.get("/admin/bundles")
-async def list_bundles(admin: dict = Depends(require_admin)):
+async def list_bundles(admin: dict = Depends(require_area("marketing"))):
     items = await db.bundles.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": [await _resolve_bundle(b) for b in items]}
 
 
 @marketing_router.post("/admin/bundles")
-async def create_bundle(body: BundleInput, admin: dict = Depends(require_admin)):
+async def create_bundle(body: BundleInput, admin: dict = Depends(require_area("marketing"))):
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = _iso()
@@ -134,7 +134,7 @@ async def create_bundle(body: BundleInput, admin: dict = Depends(require_admin))
 
 
 @marketing_router.put("/admin/bundles/{bundle_id}")
-async def update_bundle(bundle_id: str, body: BundleInput, admin: dict = Depends(require_admin)):
+async def update_bundle(bundle_id: str, body: BundleInput, admin: dict = Depends(require_area("marketing"))):
     res = await db.bundles.update_one({"id": bundle_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Bundle introuvable")
@@ -143,7 +143,7 @@ async def update_bundle(bundle_id: str, body: BundleInput, admin: dict = Depends
 
 
 @marketing_router.delete("/admin/bundles/{bundle_id}")
-async def delete_bundle(bundle_id: str, admin: dict = Depends(require_admin)):
+async def delete_bundle(bundle_id: str, admin: dict = Depends(require_area("marketing"))):
     await db.bundles.delete_one({"id": bundle_id})
     return {"ok": True}
 
@@ -193,7 +193,7 @@ async def active_flash():
 
 
 @marketing_router.get("/admin/flash-sales")
-async def list_flash(admin: dict = Depends(require_admin)):
+async def list_flash(admin: dict = Depends(require_area("marketing"))):
     items = await db.flash_sales.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     now = _iso()
     for s in items:
@@ -202,7 +202,7 @@ async def list_flash(admin: dict = Depends(require_admin)):
 
 
 @marketing_router.post("/admin/flash-sales")
-async def create_flash(body: FlashInput, admin: dict = Depends(require_admin)):
+async def create_flash(body: FlashInput, admin: dict = Depends(require_area("marketing"))):
     if body.scope not in ("category", "product", "all"):
         raise HTTPException(400, "Scope invalide")
     doc = body.model_dump()
@@ -214,7 +214,7 @@ async def create_flash(body: FlashInput, admin: dict = Depends(require_admin)):
 
 
 @marketing_router.put("/admin/flash-sales/{sale_id}")
-async def update_flash(sale_id: str, body: FlashInput, admin: dict = Depends(require_admin)):
+async def update_flash(sale_id: str, body: FlashInput, admin: dict = Depends(require_area("marketing"))):
     res = await db.flash_sales.update_one({"id": sale_id}, {"$set": body.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(404, "Vente flash introuvable")
@@ -222,6 +222,6 @@ async def update_flash(sale_id: str, body: FlashInput, admin: dict = Depends(req
 
 
 @marketing_router.delete("/admin/flash-sales/{sale_id}")
-async def delete_flash(sale_id: str, admin: dict = Depends(require_admin)):
+async def delete_flash(sale_id: str, admin: dict = Depends(require_area("marketing"))):
     await db.flash_sales.delete_one({"id": sale_id})
     return {"ok": True}

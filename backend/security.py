@@ -37,6 +37,25 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
 
+def create_2fa_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "type": "2fa",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+    }
+    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+
+
+def decode_2fa_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Jeton 2FA invalide ou expiré")
+    if payload.get("type") != "2fa":
+        raise HTTPException(status_code=401, detail="Type de jeton invalide")
+    return payload["sub"]
+
+
 async def get_current_user(request: Request) -> dict:
     token = None
     auth_header = request.headers.get("Authorization", "")
@@ -63,3 +82,45 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+# ----------------------------- RBAC (Phase 4) -----------------------------
+STAFF_ROLES = {"admin", "manager", "marketing", "support", "accounting"}
+ALL_AREAS = {"analytics", "catalog", "orders", "content", "marketing",
+             "operations", "ai", "cj", "settings", "support", "staff"}
+
+# Zones autorisées par rôle (admin = toutes)
+ROLE_PERMISSIONS = {
+    "admin": set(ALL_AREAS),
+    "manager": {"analytics", "catalog", "orders", "content", "marketing", "operations", "ai", "cj", "support"},
+    "marketing": {"analytics", "marketing", "content", "ai", "catalog"},
+    "support": {"orders", "support", "marketing"},
+    "accounting": {"analytics", "orders", "settings"},
+    "customer": set(),
+}
+
+
+def permissions_for(role: str) -> set:
+    return ROLE_PERMISSIONS.get(role, set())
+
+
+def has_permission(user: dict, area: str) -> bool:
+    if user.get("role") == "admin":
+        return True
+    return area in permissions_for(user.get("role", "customer"))
+
+
+def require_area(area: str):
+    """Dépendance : autorise l'admin, ou un staff dont le rôle couvre la zone."""
+    async def _dep(user: dict = Depends(get_current_user)) -> dict:
+        if not has_permission(user, area):
+            raise HTTPException(status_code=403, detail="Permission refusée pour cette zone")
+        return user
+    return _dep
+
+
+async def require_staff(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") not in STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Accès réservé au personnel")
+    return user
+

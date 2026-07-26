@@ -29,6 +29,15 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
+    if (res.data.twofa_required) {
+      return { twofa_required: true, temp_token: res.data.temp_token };
+    }
+    persist(res.data);
+    return res.data.user;
+  };
+
+  const verify2fa = async (temp_token, code) => {
+    const res = await api.post("/auth/2fa/login", { temp_token, code });
     persist(res.data);
     return res.data.user;
   };
@@ -45,7 +54,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, verify2fa, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
