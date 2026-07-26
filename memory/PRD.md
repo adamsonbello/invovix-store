@@ -84,11 +84,25 @@ Objectif utilisateur : transformer la boutique en ERP dropshipping (30 modules).
 - **UI Admin > Studio IA** (`Admin.jsx` : `AiTab` + 4 panneaux) avec application directe du contenu réécrit sur la fiche produit.
 - Validation : **8/8 pytest** (`tests/test_ai.py`) + smoke frontend (iteration 5). Pop-up newsletter masqué sur /admin.
 
+## Implemented (2026-06 — Amélioration IA "1 clic" + Phase 2 Back-office ERP)
+### Amélioration : Studio IA branché partout
+- **Optimisation 1-clic** `POST /api/admin/ai/optimize-product/{id}` (rewrite + score + image optionnelle), réutilisable. Stocke seo_title/seo_description/keywords/faq/bullet_points/ai_score/ai_optimized sur le produit.
+- **Formulaire produit** : boutons « Optimiser avec l'IA » (réécrit titre/desc FR-EN) + « Générer une image IA ».
+- **Liste produits admin** : bouton IA 1-clic par produit + badge score (IA xx/100 · ✨ optimisé).
+- **Import CJ** : case « Optimiser à l'import (IA) » → réécriture + score auto à chaque import (rewrite+score, texte, rapide). VÉRIFIÉ (iteration 6).
+### Phase 2 — Back-office ERP (module `erp.py`)
+- **Fournisseurs + comparateur** (mod 6/23) : CRUD `/api/admin/suppliers`, score global (qualité − délai − port), `/compare` trié, comptage produits. UI onglet « Fournisseurs ». VÉRIFIÉ.
+- **Catalogue enrichi** (mod 2) : produits + buy_price, marge (calculée UI), brand, sku, ean, weight, dimensions, subcategory, supplier_id, supplier_url, video_url. Form admin étendu. VÉRIFIÉ.
+- **Dashboard enrichi** (mod 1) : bénéfice brut, CA 30j, bénéfice net, ROAS, ROI, dépenses pub (réglages), ruptures, stock faible, à expédier, alertes actives + graphe CA mensuel 12 mois. VÉRIFIÉ.
+- **Moteur de règles no-code** (mod 21) : `/api/admin/rules` (SI rupture/stock≤seuil/marge<seuil → ALORS alerte/masquer/ajuster prix), exécution `/rules/run` + intégré à la synchro stock planifiée. Alertes `/api/admin/alerts` (résoudre/clear). UI onglet « Règles & Alertes ». VÉRIFIÉ.
+- **Dépenses pub** dans Réglages (`ad_spend_30d`) pour ROAS/ROI/bénéfice net.
+- Validation : **26/26 pytest** (`tests/test_erp_phase2.py`) + smoke UI (iteration 6). Bannières newsletter & cookies masquées sur /admin.
+
 ## Roadmap ERP (phases restantes)
-- **Phase 2 — Back-office ERP** : fournisseurs + comparateur (mod 6/23), catalogue enrichi (marge, poids, dims, marques, EAN, vidéos, PDF — mod 2), dashboard enrichi (bénéfice, ruptures, à expédier, alertes — mod 1), moteur de règles no-code (mod 21), import CSV/Excel/URL (mod 3).
+- **Phase 2 (reste)** : import CSV/Excel/URL (mod 3) — non fait.
 - **Phase 3 — CRM & Marketing** : CRM + fidélité (mod 10), email marketing/panier abandonné (mod 11), notifications multi-canal SMS/WhatsApp/Discord/Slack (mod 12), bundles + ventes flash (mod 16).
 - **Phase 4 — Plateforme & sécurité** : rôles & permissions (mod 20), 2FA/journal/sauvegardes (mod 27), PWA (mod 26), multi-boutiques (mod 19), documents + API publique (mod 24/25).
-- Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → approche retenue = CSV/Excel + import par URL (CJ reste le pipeline principal).
+- Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → CSV/Excel + import par URL (CJ = pipeline principal).
 
 ## Requires user action (mise à jour)
 - **Identité légale société** : renseigner forme juridique, SIREN/SIRET, TVA intracom (et régime/taux TVA) dans Admin > Réglages avant émission de factures officielles (actuellement placeholders vides).

@@ -8,6 +8,7 @@ export default function CookieConsent() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
+    if (window.location.pathname.startsWith("/admin")) return;
     if (!localStorage.getItem("invovix_cookie_consent")) {
       const id = setTimeout(() => setShow(true), 1500);
       return () => clearTimeout(id);
