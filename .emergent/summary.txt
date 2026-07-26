@@ -1,0 +1,109 @@
+<analysis>**original_problem_statement**: Create a premium, bilingual (FR/EN) e-commerce dropshipping website (invovix.store) in the smart home/tech niche compatible with CJDropshipping. Requirements include Stripe & PayPal payments, Admin dashboard, user accounts, product & delivery reviews, SEO/Sitemap, marketing features (Brevo emails), and full automated dropshipping capabilities.
+
+**User's preferred language**: French (Français). You MUST automatically detect the user's primary language from their messages inside the <trajectory> tag and INSTRUCT next agent to respond in the user's preferred language only. ALL interactions and responses with the user MUST be in French.
+
+**what currently exists?** 
+A highly functional, premium e-commerce dropshipping platform (React + FastAPI + MongoDB). It features a complete shop, user authentication, checkout (Stripe/PayPal), and a deeply integrated CJDropshipping workflow (real product seed, automated fulfillment on payment, variant handling, stock synchronization). It includes an Analytics dashboard, automated Brevo transactional emails, PDF invoicing, Returns/Refunds management, legal pages (CGV/RGPD), Cookie banner, GTM, reCAPTCHA v3, and French B2C e-invoicing compliance (e-reporting CSV export + continuous PDF invoice numbering). Automated background tasks for stock and tracking sync are active.
+
+**Last working item**: 
+- Last item agent was working: The agent successfully finalized, tested, and validated the French B2C e-invoicing compliance (e-reporting CSV + invoice sequential numbering) and the automated cron background task for CJDropshipping stock/tracking synchronization. After completion, the user asked how to preserve project context in a new conversation (due to memory saturation), and the agent explained the Fork Chat feature.
+- Status: NONE (Previous tasks are COMPLETED and user is initiating a new fork)
+- Agent Testing Done: Y
+- Which testing method agent to use? NA (Testing was completed successfully via testing_agent in iteration 4)
+- User Testing Done: N
+
+**All Pending/In progress Issue list**: 
+None. The application passed all 68 pytest cases and end-to-end frontend validations in the last iteration without any critical or minor bugs.
+
+**In progress Task List**: 
+None.
+
+**Upcoming and Future Tasks**
+Future Tasks:
+- Task 1: Add a mini-compliance/status dashboard in the Admin UI exposing  and  timestamps, plus a quick overview of the monthly e-reporting totals. (P1 - suggested by testing agent and proposed to user).
+- Task 2: Explore adding real-time CJ tracking webhooks if supported by the CJ API. (P2)
+
+**Completed work in this session**
+- Verified and finalized French E-invoicing B2C compliance (Factur-X / E-reporting CSV) (DONE)
+- Automated CJDropshipping stock and tracking synchronization via background cron tasks (DONE)
+- Added testing configurations for e-reporting and invoice numbering (DONE)
+- Responded to user inquiry regarding Emergent context management and chat forking (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+None. 
+
+**Known issue recurrence from previous fork**
+- Issue recurrence in previous fork: Image hotlinking protection. External images (CJDropshipping, Unsplash) block cross-origin requests.
+- Recurrence count: 0 in this session.
+- Status: RESOLVED
+Note: The previous agent explicitly downloaded external images to  and . Do not revert this or use raw external URLs for products/blogs.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+Frontend: React, Tailwind CSS, Framer Motion, Lenis Smooth Scroll, Recharts.
+Backend: FastAPI, Motor (Async MongoDB), PyJWT, Reportlab, Pytest.
+Integrations: CJDropshipping API, Stripe API, PayPal API, Brevo API, Google reCAPTCHA v3.
+
+**key DB schema**
+- users: 
+- products: 
+- orders: 
+- reviews: 
+
+**changes in tech stack**
+- Added  for PDF generation and  for frontend analytics.
+
+**All files of reference** 
+-  (Contains background loop definitions  and )
+-  (Contains e-reporting export and invoice generation logic)
+-  (Settings tab contains the legal identity inputs and CSV export trigger)
+-  (Maintained actively as the source of truth for features)
+
+**Areas that need refactoring**
+-  (~830 lines) is quite large with many tabs. No immediate refactor required unless adding substantial new tabs.
+
+**key api endpoints**
+-  (Downloads B2C e-reporting CSV)
+-  (Downloads compliant PDF invoice)
+
+**Critical Info for New Agent**
+- **Language**: You MUST converse with the user in **French**.
+- **CJ Stock Handling**: Tracked per variant ().
+- **Background Tasks**: Managed natively in FastAPI via  loops on startup.
+- **Memory Files**: The previous agent reliably maintained , , and . Rely on these to understand the state of the codebase.
+
+**documents and test reports created in this job** 
+- 
+- 
+- 
+- 
+
+**Last 10 User Messages and any pending HUMAN messages** 
+1. *User*: Asked how to keep project context and logic because the conversation is too long (memory saturation). -> *Agent completed via  explaining how the Fork Chat feature retains context via handoff summaries and memory files.*
+
+**Project Health Check:**
+- Broken: None. All 68 backend tests passed.
+- Mocked: PayPal is in Sandbox mode. E-reporting was tested via simulated data but fully functional.
+
+**3rd Party Integrations** 
+- Stripe (Payments) — requires User API Key
+- PayPal (Payments) — requires User API Key (Sandbox)
+- CJDropshipping (Products/Fulfillment) — requires User API Key
+- Brevo (Emails) — requires User API Key
+- Google reCAPTCHA v3 (Security) — requires User API Key
+- Gemini Nano Banana (Image Generation) — uses Emergent LLM Key
+
+**Testing status**
+- Testing agent used after significant changes: YES (Iteration 4 successful)
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: Pytest files updated in 
+- Known regressions: None
+
+**Credentials to test flow:**
+- Admin Email: 
+- Admin Password: 
+
+**What agent forgot to execute**
+Nothing. The agent fully completed the previous tasks, verified them, and effectively answered the user's operational question about platform capabilities.</analysis>
