@@ -1839,7 +1839,47 @@ function SecurityTab({ perms }) {
     <div className="space-y-12" data-testid="admin-security-tab">
       <TwoFAPanel enabled={perms?.twofa_enabled} />
       {isAdmin && <StaffPanel />}
+      {isAdmin && <ApiKeysPanel />}
       {isAdmin && <LoginJournalPanel />}
+    </div>
+  );
+}
+
+function ApiKeysPanel() {
+  const [items, setItems] = useState([]);
+  const [name, setName] = useState("");
+  const load = () => api.get("/admin/api-keys").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const create = async (e) => {
+    e.preventDefault();
+    if (!name) { toast.error("Nom requis"); return; }
+    try { await api.post("/admin/api-keys", { name }); toast.success("Clé API créée"); setName(""); load(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const del = async (id) => { await api.delete(`/admin/api-keys/${id}`); load(); };
+  const toggle = async (id) => { await api.put(`/admin/api-keys/${id}/toggle`); load(); };
+  const copy = (k) => { navigator.clipboard?.writeText(k); toast.success("Clé copiée"); };
+  return (
+    <div data-testid="apikeys-panel">
+      <p className="font-display font-bold text-lg mb-1">API publique & intégrations</p>
+      <p className="text-stone text-sm mb-4">Endpoints en lecture seule sécurisés par header <code className="bg-ink/5 px-1.5 py-0.5">X-API-Key</code> : <code className="bg-ink/5 px-1.5 py-0.5">GET /api/public/products</code>, <code className="bg-ink/5 px-1.5 py-0.5">/products/{"{id}"}</code>, <code className="bg-ink/5 px-1.5 py-0.5">/stats</code>.</p>
+      <form onSubmit={create} className="flex flex-wrap gap-2 mb-4 max-w-xl">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de la clé (ex: Intégration Zapier)" className="flex-1 min-w-[220px] px-4 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="apikey-name" />
+        <button type="submit" className="bg-ink text-cream px-5 py-2.5 rounded-full font-medium hover:bg-brand transition-colors" data-testid="apikey-create-btn">Générer une clé</button>
+      </form>
+      <div className="border border-ink/10 divide-y divide-ink/10 max-w-2xl">
+        {items.length === 0 && <p className="p-5 text-stone text-sm">Aucune clé API.</p>}
+        {items.map((k) => (
+          <div key={k.id} className="flex flex-wrap items-center gap-3 p-4" data-testid={`apikey-${k.id}`}>
+            <div className="flex-1 min-w-[200px]">
+              <p className="font-medium">{k.name} {!k.active && <span className="text-xs text-stone">(désactivée)</span>}</p>
+              <button onClick={() => copy(k.key)} className="text-stone text-xs font-mono hover:text-ink" title="Copier">{k.key.slice(0, 18)}… 📋</button>
+            </div>
+            <button onClick={() => toggle(k.id)} className="text-xs border border-ink/20 rounded-full px-3 py-1 hover:border-ink" data-testid={`apikey-toggle-${k.id}`}>{k.active ? "Désactiver" : "Activer"}</button>
+            <button onClick={() => del(k.id)} className="text-brand hover:opacity-70 p-2" data-testid={`apikey-delete-${k.id}`}><Trash2 className="w-4 h-4" /></button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

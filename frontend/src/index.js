@@ -21,3 +21,10 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// PWA: register service worker (installable + offline shell)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  });
+}

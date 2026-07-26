@@ -113,10 +113,22 @@ Modules 10/11/12/16 + fidélité. Livré en 3 lots testés (iteration 7 : 24/24 
 - **SMS & WhatsApp (Twilio)** : NON FAIT — nécessite les identifiants Twilio de l'utilisateur (Account SID, Auth Token, numéro).
 - Réglages : `ad_spend_30d`, `discord_webhook_url`, `slack_webhook_url`, `notify_new_order`.
 
+## Implemented (2026-06 — Phase 4 Plateforme & Sécurité)
+Livré en 2 lots testés (iteration 8 : 24/24 backend + 100% front pour 4A ; 4B auto-vérifié curl+screenshot).
+### 4A — RBAC + 2FA + Journal (`security.py`, `staff.py`, `twofa.py`)
+- **RBAC** : rôles admin/manager/marketing/support/accounting/customer. Permissions par ZONE (`ROLE_PERMISSIONS`), dépendance `require_area(zone)` appliquée à TOUS les endpoints admin (server.py + ops/ai/erp/crm/marketing). `GET /api/auth/permissions`.
+- **Gestion du personnel** (admin) : `/api/admin/staff` CRUD + rôle. UI onglet « Sécurité ».
+- **2FA TOTP** (pyotp+qrcode) : `/api/auth/2fa/setup|enable|disable`, login 2 étapes (`temp_token` → `/api/auth/2fa/login`). UI panneau 2FA + écran code login.
+- **Journal des connexions** : succès/échec + IP + UA, `GET /api/admin/login-journal`. UI panneau journal.
+- Frontend : onglets admin filtrés par permissions ; `ProtectedRoute adminOnly` autorise le staff.
+### 4B — PWA + API publique (`publicapi.py`)
+- **PWA installable** : manifest + icônes 192/512/maskable, service-worker (network-first nav, jamais /api), enregistré. VÉRIFIÉ.
+- **API publique read-only** `X-API-Key` : `GET /api/public/products|/{id}|/stats`. Clés API admin `/api/admin/api-keys` (CRUD+toggle). UI panneau « API publique ». VÉRIFIÉ (401/200).
+
 ## Roadmap ERP (phases restantes)
+- **Phase 4 (reste)** : multi-boutiques (mod 19), gestion documentaire (mod 24), GraphQL + webhooks sortants (mod 25).
 - **Phase 3 (reste)** : Notifications SMS/WhatsApp via Twilio (attente clés) ; push web.
 - **Phase 2 (reste)** : import CSV/Excel/URL de produits (module 3).
-- **Phase 4 — Plateforme & sécurité** : rôles & permissions (mod 20), 2FA/journal/sauvegardes (mod 27), PWA (mod 26), multi-boutiques (mod 19), documents + API publique (mod 24/25).
 - Note réalité : imports Amazon/AliExpress/Temu/Alibaba/eBay/Walmart/Etsy sans API officielle → CSV/Excel + import par URL (CJ = pipeline principal).
 
 ## Requires user action (mise à jour)

@@ -34,6 +34,7 @@ from notifications import notif_router
 import staff as staffmod
 from staff import staff_router
 import twofa as twofamod
+from publicapi import publicapi_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("invovix")
@@ -849,6 +850,7 @@ app.include_router(crm_router)
 app.include_router(marketing_router)
 app.include_router(notif_router)
 app.include_router(staff_router)
+app.include_router(publicapi_router)
 
 app.add_middleware(
     CORSMiddleware,

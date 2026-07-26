@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 from database import db
@@ -44,7 +44,7 @@ async def my_permissions(user: dict = Depends(get_current_user)):
 
 # ----------------------------- Gestion du personnel (admin only) -----------------------------
 class StaffInput(BaseModel):
-    email: str
+    email: EmailStr
     name: str
     password: str
     role: str = "support"
@@ -95,8 +95,10 @@ async def delete_staff(staff_id: str, admin: dict = Depends(require_admin)):
     if staff_id == admin["id"]:
         raise HTTPException(400, "Impossible de supprimer votre propre compte")
     u = await db.users.find_one({"id": staff_id}, {"_id": 0})
-    if not u or u.get("role") not in STAFF_ROLES:
+    if not u:
         raise HTTPException(404, "Membre introuvable")
+    if u.get("role") not in STAFF_ROLES:
+        raise HTTPException(400, "Cet utilisateur n'est pas un membre du personnel")
     await db.users.delete_one({"id": staff_id})
     return {"ok": True}
 
