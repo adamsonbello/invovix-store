@@ -19,6 +19,15 @@ DEFAULT_SETTINGS = {
     "banner_text_en": "Free shipping over €50 · 100% secure checkout",
     "whatsapp_number": "",
     "whatsapp_enabled": False,
+    # --- Identité légale (facturation / conformité) ---
+    "company_name": "Invovix",
+    "company_legal_form": "",          # ex: SAS, SASU, EI, micro-entreprise
+    "siren": "",
+    "siret": "",
+    "vat_number": "",                  # TVA intracommunautaire
+    "company_address": "",
+    "vat_regime": "franchise",         # "franchise" (293 B, sans TVA) | "assujetti"
+    "vat_rate": 20.0,
 }
 
 
@@ -36,6 +45,14 @@ class SettingsInput(BaseModel):
     banner_text_en: str = ""
     whatsapp_number: str = ""
     whatsapp_enabled: bool = False
+    company_name: str = "Invovix"
+    company_legal_form: str = ""
+    siren: str = ""
+    siret: str = ""
+    vat_number: str = ""
+    company_address: str = ""
+    vat_regime: str = "franchise"
+    vat_rate: float = 20.0
 
 
 @extras_router.get("/settings")

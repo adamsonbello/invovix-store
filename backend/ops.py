@@ -13,6 +13,7 @@ import stripe
 
 from database import db
 from security import get_current_user, require_admin
+from extras import get_settings_doc
 import cj as cjmod
 import brevo as brevomod
 
@@ -213,8 +214,41 @@ async def decide_return(return_id: str, body: ReturnDecision, admin: dict = Depe
     return {"status": new_status, "refund": refund_res}
 
 
-# ----------------------------- Invoice PDF -----------------------------
-def _build_invoice_pdf(order: dict) -> bytes:
+# ----------------------------- Invoice PDF (compliant) -----------------------------
+async def _next_invoice_number(order: dict) -> str:
+    """Continuous sequential numbering (mandatory). Idempotent per order."""
+    if order.get("invoice_number"):
+        return order["invoice_number"]
+    year = _today().year
+    doc = await db.counters.find_one_and_update(
+        {"id": f"invoice-{year}"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (doc or {}).get("seq", 1)
+    number = f"INV-{year}-{seq:05d}"
+    await db.orders.update_one(
+        {"id": order["id"]},
+        {"$set": {"invoice_number": number, "invoice_date": _today().isoformat()}},
+    )
+    return number
+
+
+def _vat_breakdown(order: dict, settings: dict):
+    """Returns (regime, rate, total_ht, total_tva, total_ttc, vat_note)."""
+    total = float(order.get("total", 0) or 0)
+    regime = settings.get("vat_regime", "franchise")
+    rate = float(settings.get("vat_rate", 20.0) or 0)
+    if regime == "assujetti" and rate > 0:
+        ht = round(total / (1 + rate / 100), 2)
+        tva = round(total - ht, 2)
+        note = f"TVA {rate:.0f}% incluse."
+        return regime, rate, ht, tva, total, note
+    return regime, 0.0, total, 0.0, total, "TVA non applicable, art. 293 B du CGI."
+
+
+def _build_invoice_pdf(order: dict, settings: dict, number: str) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
@@ -223,68 +257,94 @@ def _build_invoice_pdf(order: dict) -> bytes:
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
     ref = order["id"][:8].upper()
-    y = h - 30 * mm
+    regime, rate, ht, tva, ttc, vat_note = _vat_breakdown(order, settings)
+    y = h - 22 * mm
 
-    c.setFont("Helvetica-Bold", 22)
-    c.drawString(20 * mm, y, "INVOVIX")
+    # Header — seller legal identity (mandatory)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(20 * mm, y, settings.get("company_name") or "Invovix")
+    c.setFont("Helvetica", 8)
+    seller_lines = []
+    if settings.get("company_legal_form"):
+        seller_lines.append(settings["company_legal_form"])
+    if settings.get("company_address"):
+        seller_lines.append(settings["company_address"])
+    ids = []
+    if settings.get("siret"): ids.append(f"SIRET {settings['siret']}")
+    elif settings.get("siren"): ids.append(f"SIREN {settings['siren']}")
+    if settings.get("vat_number"): ids.append(f"TVA {settings['vat_number']}")
+    if ids: seller_lines.append(" · ".join(ids))
+    seller_lines.append("contact@invovix.store · invovix.store")
+    yy = y - 6 * mm
+    for ln in seller_lines:
+        c.drawString(20 * mm, yy, ln[:95]); yy -= 4.2 * mm
+
+    # Invoice title block
+    c.setFont("Helvetica-Bold", 15)
+    c.drawRightString(w - 20 * mm, y, "FACTURE")
     c.setFont("Helvetica", 9)
-    c.drawRightString(w - 20 * mm, y, "invovix.store")
-    c.drawRightString(w - 20 * mm, y - 5 * mm, "contact@invovix.store")
+    c.drawRightString(w - 20 * mm, y - 6 * mm, f"N° {number}")
+    c.drawRightString(w - 20 * mm, y - 11 * mm, f"Date : {(order.get('invoice_date') or order.get('created_at') or '')[:10]}")
+    c.drawRightString(w - 20 * mm, y - 16 * mm, f"Commande : #{ref}")
 
-    y -= 20 * mm
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(20 * mm, y, f"Facture #{ref}")
-    c.setFont("Helvetica", 9)
-    c.drawString(20 * mm, y - 6 * mm, f"Date : {(order.get('created_at') or '')[:10]}")
-
+    # Buyer + delivery
     addr = order.get("shipping_address") or {}
-    c.drawString(20 * mm, y - 14 * mm, "Facturé à :")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(20 * mm, y - 19 * mm, addr.get("full_name", ""))
-    c.setFont("Helvetica", 9)
-    c.drawString(20 * mm, y - 24 * mm, f"{addr.get('address','')}")
-    c.drawString(20 * mm, y - 29 * mm, f"{addr.get('postal_code','')} {addr.get('city','')} - {addr.get('country','')}")
-
-    # table header
-    y -= 42 * mm
+    y = yy - 8 * mm
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(20 * mm, y, "Produit")
+    c.drawString(20 * mm, y, "Client / Adresse de livraison :")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, y - 5 * mm, addr.get("full_name", ""))
+    c.drawString(20 * mm, y - 10 * mm, addr.get("address", ""))
+    c.drawString(20 * mm, y - 15 * mm, f"{addr.get('postal_code','')} {addr.get('city','')} - {addr.get('country','')}")
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawString(20 * mm, y - 21 * mm, "Nature de l'opération : Livraison de biens")
+
+    # Line items table
+    y -= 32 * mm
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(20 * mm, y, "Désignation")
     c.drawString(120 * mm, y, "Qté")
-    c.drawString(140 * mm, y, "PU")
-    c.drawRightString(w - 20 * mm, y, "Total")
+    c.drawString(135 * mm, y, "PU TTC")
+    c.drawRightString(w - 20 * mm, y, "Total TTC")
     c.line(20 * mm, y - 2 * mm, w - 20 * mm, y - 2 * mm)
     y -= 8 * mm
-    c.setFont("Helvetica", 9)
+    c.setFont("Helvetica", 8)
     for it in order.get("items", []):
         name = it.get("title", "")[:60]
         if it.get("variant_name"):
             name += f" ({it['variant_name']})"
-        c.drawString(20 * mm, y, name[:70])
+        c.drawString(20 * mm, y, name[:72])
         c.drawString(120 * mm, y, str(it.get("quantity", 1)))
-        c.drawString(140 * mm, y, f"{it.get('price', 0):.2f}EUR")
+        c.drawString(135 * mm, y, f"{it.get('price', 0):.2f}")
         c.drawRightString(w - 20 * mm, y, f"{it.get('line_total', 0):.2f}EUR")
-        y -= 6 * mm
+        y -= 5.5 * mm
+        if y < 60 * mm:
+            c.showPage(); y = h - 30 * mm; c.setFont("Helvetica", 8)
 
-    y -= 4 * mm
+    # Totals
+    y -= 3 * mm
     c.line(20 * mm, y, w - 20 * mm, y)
-    y -= 7 * mm
+    y -= 6 * mm
     c.setFont("Helvetica", 9)
-    c.drawRightString(w - 45 * mm, y, "Sous-total :")
-    c.drawRightString(w - 20 * mm, y, f"{order.get('subtotal', 0):.2f}EUR")
     if order.get("discount"):
-        y -= 5 * mm
         c.drawRightString(w - 45 * mm, y, f"Réduction {order.get('promo_code','') or ''} :")
-        c.drawRightString(w - 20 * mm, y, f"-{order.get('discount', 0):.2f}EUR")
-    y -= 5 * mm
+        c.drawRightString(w - 20 * mm, y, f"-{order.get('discount', 0):.2f}EUR"); y -= 5 * mm
     c.drawRightString(w - 45 * mm, y, "Livraison :")
-    c.drawRightString(w - 20 * mm, y, "Offerte" if not order.get("shipping") else f"{order.get('shipping'):.2f}EUR")
-    y -= 7 * mm
+    c.drawRightString(w - 20 * mm, y, "Offerte" if not order.get("shipping") else f"{order.get('shipping'):.2f}EUR"); y -= 5 * mm
+    c.drawRightString(w - 45 * mm, y, "Total HT :")
+    c.drawRightString(w - 20 * mm, y, f"{ht:.2f}EUR"); y -= 5 * mm
+    if tva > 0:
+        c.drawRightString(w - 45 * mm, y, f"TVA ({rate:.0f}%) :")
+        c.drawRightString(w - 20 * mm, y, f"{tva:.2f}EUR"); y -= 5 * mm
     c.setFont("Helvetica-Bold", 11)
-    c.drawRightString(w - 45 * mm, y, "TOTAL TTC :")
-    c.drawRightString(w - 20 * mm, y, f"{order.get('total', 0):.2f}EUR")
+    c.drawRightString(w - 45 * mm, y, "Total TTC :")
+    c.drawRightString(w - 20 * mm, y, f"{ttc:.2f}EUR")
 
-    c.setFont("Helvetica-Oblique", 7)
-    c.drawString(20 * mm, 20 * mm, "TVA non applicable / incluse selon régime. Document généré automatiquement par Invovix.")
+    # Legal footer (mandatory mentions)
+    c.setFont("Helvetica", 7)
+    c.drawString(20 * mm, 26 * mm, vat_note)
+    c.drawString(20 * mm, 22 * mm, "Paiement à réception. Pas d'escompte pour paiement anticipé. Pénalités de retard : 3x taux légal ; indemnité forfaitaire recouvrement : 40€.")
+    c.drawString(20 * mm, 18 * mm, "Facture émise par Invovix — document conservé conformément aux obligations légales (durée 10 ans).")
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -299,10 +359,65 @@ async def order_invoice(order_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(403, "Accès refusé")
     if order.get("payment_status") != "paid":
         raise HTTPException(400, "Facture disponible uniquement pour les commandes payées.")
-    pdf = _build_invoice_pdf(order)
-    ref = order_id[:8].upper()
+    settings = await get_settings_doc()
+    number = await _next_invoice_number(order)
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})  # reload with invoice_date
+    pdf = _build_invoice_pdf(order, settings, number)
     return StreamingResponse(
         BytesIO(pdf),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="Invovix-Facture-{ref}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{number}.pdf"'},
     )
+
+
+# ----------------------------- e-reporting B2C (transmission des données) -----------------------------
+@ops_router.get("/admin/ereporting")
+async def ereporting(admin: dict = Depends(require_admin), days: int = 90, format: str = "json"):
+    """Aggregated B2C transaction data (per day × VAT rate) for transmission to a PDP/PPF.
+    Conforme à l'obligation de e-reporting des ventes aux particuliers."""
+    settings = await get_settings_doc()
+    regime = settings.get("vat_regime", "franchise")
+    rate = float(settings.get("vat_rate", 20.0) or 0) if regime == "assujetti" else 0.0
+    since = (_today() - timedelta(days=days)).isoformat()
+    paid = await db.orders.find(
+        {"payment_status": "paid", "created_at": {"$gte": since}}, {"_id": 0}
+    ).to_list(50000)
+
+    agg = {}
+    for o in paid:
+        day = (o.get("created_at") or "")[:10]
+        ttc = float(o.get("total", 0) or 0)
+        ht = round(ttc / (1 + rate / 100), 2) if rate else ttc
+        tva = round(ttc - ht, 2)
+        key = (day, rate)
+        e = agg.setdefault(key, {"date": day, "vat_rate": rate, "count": 0, "total_ttc": 0.0, "total_ht": 0.0, "total_tva": 0.0})
+        e["count"] += 1
+        e["total_ttc"] = round(e["total_ttc"] + ttc, 2)
+        e["total_ht"] = round(e["total_ht"] + ht, 2)
+        e["total_tva"] = round(e["total_tva"] + tva, 2)
+    rows = sorted(agg.values(), key=lambda x: x["date"])
+
+    if format == "csv":
+        lines = ["date;taux_tva;nb_operations;total_ht;total_tva;total_ttc;devise;type"]
+        for r in rows:
+            lines.append(f"{r['date']};{r['vat_rate']:.0f};{r['count']};{r['total_ht']:.2f};{r['total_tva']:.2f};{r['total_ttc']:.2f};EUR;B2C")
+        csv = "\n".join(lines)
+        return StreamingResponse(
+            BytesIO(csv.encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="ereporting-B2C-{_today().strftime("%Y%m%d")}.csv"'},
+        )
+
+    return {
+        "regime": regime,
+        "vat_rate": rate,
+        "period_days": days,
+        "operation_type": "B2C",
+        "totals": {
+            "count": sum(r["count"] for r in rows),
+            "total_ttc": round(sum(r["total_ttc"] for r in rows), 2),
+            "total_ht": round(sum(r["total_ht"] for r in rows), 2),
+            "total_tva": round(sum(r["total_tva"] for r in rows), 2),
+        },
+        "rows": rows,
+    }

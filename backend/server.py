@@ -874,6 +874,19 @@ async def seed_products():
     logger.info("Sample products seeded")
 
 
+async def _stock_sync_loop():
+    """Periodically refresh CJ stock for all imported products (default: daily)."""
+    from ops import _sync_all_stock
+    interval = int(os.environ.get("STOCK_SYNC_INTERVAL_HOURS", "24")) * 3600
+    await asyncio.sleep(300)  # first run 5 min after boot
+    while True:
+        try:
+            await _sync_all_stock()
+        except Exception as e:
+            logger.error(f"stock sync loop error: {e}")
+        await asyncio.sleep(interval)
+
+
 async def _tracking_sync_loop():
     """Periodically sync CJ tracking for open orders and email customers on shipment."""
     interval = int(os.environ.get("CJ_SYNC_INTERVAL_MIN", "60")) * 60
@@ -907,6 +920,8 @@ async def startup():
     await seed_extras()
     if os.environ.get("CJ_AUTO_SYNC", "true").lower() == "true":
         asyncio.create_task(_tracking_sync_loop())
+    if os.environ.get("STOCK_AUTO_SYNC", "true").lower() == "true":
+        asyncio.create_task(_stock_sync_loop())
 
 
 @app.on_event("shutdown")

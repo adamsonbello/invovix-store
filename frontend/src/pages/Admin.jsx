@@ -653,12 +653,36 @@ function SettingsTab() {
         banner_text_en: s.banner_text_en,
         whatsapp_number: s.whatsapp_number,
         whatsapp_enabled: s.whatsapp_enabled,
+        company_name: s.company_name,
+        company_legal_form: s.company_legal_form,
+        siren: s.siren,
+        siret: s.siret,
+        vat_number: s.vat_number,
+        company_address: s.company_address,
+        vat_regime: s.vat_regime,
+        vat_rate: Number(s.vat_rate) || 0,
       });
       toast.success(t.admin.settingsSaved);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const exportEreporting = async () => {
+    try {
+      const res = await api.get("/admin/ereporting?format=csv&days=90", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ereporting-B2C-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
     }
   };
 
@@ -690,9 +714,44 @@ function SettingsTab() {
         </div>
       </div>
 
+      <div className="border border-ink/10 p-6 space-y-4" data-testid="settings-legal">
+        <p className="font-display font-bold text-lg">{t.admin.legalTitle}</p>
+        <p className="text-stone text-sm -mt-2">{t.admin.legalHelp}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SIn label={t.admin.companyName} v={s.company_name} on={(v) => setS({ ...s, company_name: v })} tid="settings-company-name" />
+          <SIn label={t.admin.legalForm} v={s.company_legal_form} on={(v) => setS({ ...s, company_legal_form: v })} tid="settings-legal-form" />
+          <SIn label="SIREN" v={s.siren} on={(v) => setS({ ...s, siren: v })} tid="settings-siren" />
+          <SIn label="SIRET" v={s.siret} on={(v) => setS({ ...s, siret: v })} tid="settings-siret" />
+          <SIn label={t.admin.vatNumber} v={s.vat_number} on={(v) => setS({ ...s, vat_number: v })} tid="settings-vat-number" />
+          <SIn label={t.admin.companyAddress} v={s.company_address} on={(v) => setS({ ...s, company_address: v })} tid="settings-company-address" />
+          <div>
+            <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{t.admin.vatRegime}</label>
+            <select value={s.vat_regime} onChange={(e) => setS({ ...s, vat_regime: e.target.value })} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid="settings-vat-regime">
+              <option value="franchise">{t.admin.regimeFranchise}</option>
+              <option value="assujetti">{t.admin.regimeAssujetti}</option>
+            </select>
+          </div>
+          {s.vat_regime === "assujetti" && (
+            <SIn label={t.admin.vatRate} v={s.vat_rate} on={(v) => setS({ ...s, vat_rate: v })} tid="settings-vat-rate" type="number" />
+          )}
+        </div>
+        <button onClick={exportEreporting} className="inline-flex items-center gap-2 mt-2 border border-ink/20 px-5 py-2.5 rounded-full text-sm font-medium hover:border-ink transition-colors" data-testid="ereporting-export-btn">
+          <Download className="w-4 h-4" /> {t.admin.ereportingExport}
+        </button>
+      </div>
+
       <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 bg-brand text-white px-8 py-3.5 rounded-full font-medium hover:bg-ink transition-colors disabled:opacity-50" data-testid="settings-save-btn">
         <Settings className="w-4 h-4" /> {saving ? t.common.loading : t.admin.saveSettings}
       </button>
+    </div>
+  );
+}
+
+function SIn({ label, v, on, tid, type = "text" }) {
+  return (
+    <div>
+      <label className="text-xs tracking-[0.15em] uppercase font-bold text-stone mb-2 block">{label}</label>
+      <input type={type} value={v || ""} onChange={(e) => on(e.target.value)} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink" data-testid={tid} />
     </div>
   );
 }
