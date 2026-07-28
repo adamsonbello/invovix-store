@@ -101,3 +101,11 @@ frontend/node_modules/.cache/default-development/11.pack
 frontend/node_modules/.cache/default-development/20.pack
 frontend/node_modules/.cache/default-development/20.pack
 frontend/node_modules/.cache/default-development/21.pack
+
+# Documents privés (module gestion documentaire) — ne pas versionner
+backend/storage/
+
+# Exceptions : versionner les modèles .env.example (sans secrets)
+!.env.example
+!backend/.env.example
+!frontend/.env.example
