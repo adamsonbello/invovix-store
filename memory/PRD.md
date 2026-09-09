@@ -153,6 +153,12 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 - **Identité numérique** : logo wordmark « INVOVIX. » (point rouge), favicon.ico + favicon-32 + icônes PWA (192/512/maskable/apple-touch) régénérés, image de partage `og-image.jpg` (SEO/OG mis à jour). Générés via Nano Banana.
 - **Stockage objet Emergent** (`backend/storage.py`) : uploads documents + images blog migrés du disque pod (éphémère) vers Emergent Object Storage (persistant en déploiement). Documents → `/api/admin/documents/{id}/download` (protégé) ; blog → `/api/media/{path}`. Init au démarrage. VÉRIFIÉ (upload/download/list/delete).
 
+
+### LOT 2 — Conversion & confiance — 2026-06
+Auto-vérifié (curl audit + screenshots bannière/avis) ; démo reviews nettoyées.
+- **Épuration catalogue CJ** : `GET /api/admin/products/audit` (détecte les produits hors-niche via allowlist de mots-clés FR/EN ; ignore seed/manual) + `POST /api/admin/products/bulk-delete {ids}`. UI onglet Produits : bouton « Auditer (hors-niche) » + panneau de sélection/suppression groupée. (Audit réel : 1 suspect sur 27 = « Orchestral Music Stand ».)
+- **Fiche avis enrichie** (`ProductReviews.jsx`) : **répartition par note** (barres 5→1), **filtre par note** (Tous/5/4/3/2/1) + **filtre « Avec photos »**, **miniatures photos** cliquables par avis, **drapeau pays** (countryCode). Rendu vérifié.
+- **Bannière vitrine Audio** sur l'accueil (`AudioBanner` dans Home.jsx, après Categories) : visuel sombre premium + CTA « Découvrir l'Audio » → /shop?category=audio. Vérifié.
 ### LOT 1 — Comparateur (catégorie + specs) & Espace client (coordonnées + messagerie) — 2026-06
 Livré et testé (iteration 10 : 6/6 pytest backend + 100% frontend, aucun bug).
 - **Comparateur** : contrainte **même catégorie** (CompareContext stocke {id,category}, toast si catégorie différente) + section **« Caractéristiques techniques »** (specs CJ). `cj.py extract_specs()` (nettoyage listes JSON, filtre valeurs non latines/junk) → Poids/Emballage/Catégorie/Matière/Unité. Endpoint admin `POST /api/admin/products/{id}/sync-specs` + bouton « Specs CJ » par produit. Specs stockées à l'import CJ + exposées dans `/api/products/{id}`.

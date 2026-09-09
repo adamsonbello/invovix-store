@@ -789,6 +789,58 @@ async def sync_product_specs(product_id: str, admin: dict = Depends(require_area
     return {"ok": True, "specs": specs}
 
 
+NICHE_KEYWORDS = [
+    "smart", "connect", "connecté", "connectee", "wifi", "wi-fi", "bluetooth", "zigbee",
+    "camera", "caméra", "camera", "sensor", "capteur", "light", "lampe", "ampoule", "bulb", "led",
+    "plug", "prise", "thermostat", "lock", "serrure", "doorbell", "sonnette", "alarm", "alarme",
+    "security", "sécurité", "securite", "surveillance", "speaker", "enceinte", "headphone", "casque",
+    "earbud", "écouteur", "ecouteur", "audio", "sound", "son ", "charger", "chargeur", "desk",
+    "bureau", "monitor", "écran", "ecran", "keyboard", "clavier", "mouse", "souris", "hub", "home",
+    "maison", "remote", "router", "routeur", "tracker", "watch", "montre", "projector", "projecteur",
+    "microphone", "webcam", "battery", "batterie", "wireless", "sans fil", "usb", "power bank", "lamp",
+]
+
+
+def _is_on_niche(p: dict) -> bool:
+    hay = " ".join([
+        str(p.get("title", "")), str(p.get("title_en", "")),
+        str(p.get("description", ""))[:300],
+        " ".join(str(v) for v in (p.get("specs") or {}).values()),
+        p.get("category", ""),
+    ]).lower()
+    return any(k in hay for k in NICHE_KEYWORDS)
+
+
+@api.get("/admin/products/audit")
+async def audit_catalog(admin: dict = Depends(require_area("catalog"))):
+    """Liste les produits potentiellement hors-niche (à épurer)."""
+    products = await db.products.find({}, {"_id": 0}).to_list(5000)
+    suspects = []
+    for p in products:
+        if p.get("source") in ("seed", "manual"):
+            continue
+        if not _is_on_niche(p):
+            suspects.append({
+                "id": p["id"], "title": p.get("title", ""), "category": p.get("category", ""),
+                "price": p.get("price", 0), "image": (p.get("images") or [None])[0],
+                "source": p.get("source", ""),
+                "reason": "Aucun mot-clé de la niche détecté (titre/description/catégorie)",
+            })
+    return {"suspects": suspects, "suspect_count": len(suspects), "total": len(products)}
+
+
+class BulkDeleteInput(BaseModel):
+    ids: List[str]
+
+
+@api.post("/admin/products/bulk-delete")
+async def bulk_delete_products(body: BulkDeleteInput, admin: dict = Depends(require_area("catalog"))):
+    if not body.ids:
+        return {"deleted": 0}
+    res = await db.products.delete_many({"id": {"$in": body.ids}})
+    return {"deleted": res.deleted_count}
+
+
 # ----------------------------- Admin -----------------------------
 @api.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(require_area("analytics"))):

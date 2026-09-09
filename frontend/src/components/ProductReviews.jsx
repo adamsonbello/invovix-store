@@ -21,6 +21,12 @@ export default function ProductReviews({ productId }) {
     else setCan(null);
   }, [user, productId]);
 
+  const [filter, setFilter] = useState("all");
+  const [withPhotos, setWithPhotos] = useState(false);
+  const dist = [5, 4, 3, 2, 1].map((n) => ({ n, count: data.items.filter((r) => Math.round(r.rating) === n).length }));
+  const filtered = data.items.filter((r) => (filter === "all" || Math.round(r.rating) === Number(filter)) && (!withPhotos || (r.images && r.images.length > 0)));
+  const photoCount = data.items.filter((r) => r.images && r.images.length > 0).length;
+
   const submit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -94,11 +100,40 @@ export default function ProductReviews({ productId }) {
         </div>
 
         <div className="lg:col-span-2">
+          {data.count > 0 && (
+            <div className="mb-6 space-y-3" data-testid="reviews-controls">
+              <div className="space-y-1.5">
+                {dist.map((d) => (
+                  <div key={d.n} className="flex items-center gap-3 text-sm">
+                    <span className="w-10 text-stone shrink-0">{d.n} ★</span>
+                    <div className="flex-1 h-2 bg-ink/10 rounded-full overflow-hidden">
+                      <div className="h-2 bg-brand rounded-full" style={{ width: `${data.count ? (d.count / data.count) * 100 : 0}%` }} />
+                    </div>
+                    <span className="w-8 text-stone text-right shrink-0">{d.count}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                {["all", "5", "4", "3", "2", "1"].map((f) => (
+                  <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${filter === f ? "bg-ink text-cream border-ink" : "border-ink/20 text-stone hover:border-ink"}`} data-testid={`reviews-filter-${f}`}>
+                    {f === "all" ? "Tous" : `${f} ★`}
+                  </button>
+                ))}
+                {photoCount > 0 && (
+                  <button onClick={() => setWithPhotos((v) => !v)} className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${withPhotos ? "bg-brand text-white border-brand" : "border-ink/20 text-stone hover:border-ink"}`} data-testid="reviews-filter-photos">
+                    Avec photos ({photoCount})
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {data.items.length === 0 ? (
             <div className="text-stone py-10" data-testid="reviews-empty">{t.reviews.empty}</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-stone py-10" data-testid="reviews-none-filter">Aucun avis pour ce filtre.</div>
           ) : (
             <div className="divide-y divide-ink/10">
-              {data.items.map((r) => (
+              {filtered.map((r) => (
                 <div key={r.id} className="py-6" data-testid={`review-${r.id}`}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -106,7 +141,10 @@ export default function ProductReviews({ productId }) {
                         {r.user_name?.[0]?.toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium leading-tight">{r.user_name}</p>
+                        <p className="font-medium leading-tight flex items-center gap-2">
+                          {r.user_name}
+                          {r.country && <span className="text-[10px] uppercase font-bold text-stone bg-ink/5 px-1.5 py-0.5 rounded">{r.country}</span>}
+                        </p>
                         {r.verified_purchase && (
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5" /> {t.reviews.verified}
@@ -127,6 +165,15 @@ export default function ProductReviews({ productId }) {
                     </div>
                   </div>
                   {r.comment && <p className="text-ink/80 mt-3 leading-relaxed">{r.comment}</p>}
+                  {r.images && r.images.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3" data-testid={`review-photos-${r.id}`}>
+                      {r.images.map((src, i) => (
+                        <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="block w-20 h-20 overflow-hidden bg-[#f0efed] border border-ink/10 hover:opacity-80 transition-opacity">
+                          <img src={src} alt="avis client" loading="lazy" className="w-full h-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

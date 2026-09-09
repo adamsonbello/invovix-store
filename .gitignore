@@ -111,3 +111,4 @@ backend/storage/
 !frontend/.env.example
 frontend/node_modules/.cache/default-development/25.pack
 frontend/node_modules/.cache/default-development/4.pack
+frontend/node_modules/.cache/default-development/1.pack

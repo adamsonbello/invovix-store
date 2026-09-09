@@ -362,12 +362,47 @@ export default function Home() {
       <Featured />
       <BundlesSection />
       <Categories />
+      <AudioBanner />
       <SocialProof />
       <Manifesto />
       <RecentJournal />
       <Trust />
       <CtaBand />
     </div>
+  );
+}
+
+function AudioBanner() {
+  const { t } = useI18n();
+  return (
+    <section className="max-w-[1600px] mx-auto px-5 md:px-10 pb-24 md:pb-36" data-testid="audio-banner">
+      <Link
+        to="/shop?category=audio"
+        className="group relative block overflow-hidden bg-ink text-cream min-h-[340px] md:min-h-[440px] grain"
+        data-testid="audio-banner-link"
+      >
+        <img
+          src="https://images.pexels.com/photos/7772548/pexels-photo-7772548.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=1400"
+          alt="Casques et enceintes connectées"
+          className="absolute inset-0 w-full h-full object-cover opacity-45 group-hover:opacity-55 group-hover:scale-105 transition-all duration-700"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/70 to-transparent" />
+        <div className="relative z-10 h-full flex flex-col justify-center p-8 md:p-16 max-w-2xl min-h-[340px] md:min-h-[440px]">
+          <span className="inline-flex items-center gap-2 text-xs tracking-[0.25em] uppercase font-bold text-brand mb-5">
+            <Headphones className="w-4 h-4" /> Nouvelle catégorie
+          </span>
+          <h2 className="font-display font-black uppercase tracking-tighter leading-[0.9] text-5xl md:text-7xl">
+            Le son,<br />réinventé.
+          </h2>
+          <p className="text-cream/70 text-base md:text-lg mt-6 max-w-md">
+            Casques à réduction de bruit, enceintes connectées et écouteurs true wireless. Une expérience audio premium pour la maison et le télétravail.
+          </p>
+          <span className="inline-flex items-center gap-2 mt-8 bg-cream text-ink px-7 py-4 rounded-full font-medium w-fit group-hover:bg-brand group-hover:text-white transition-colors" data-testid="audio-banner-cta">
+            Découvrir l'Audio <ArrowUpRight className="w-5 h-5" />
+          </span>
+        </div>
+      </Link>
+    </section>
   );
 }
 

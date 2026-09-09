@@ -412,6 +412,28 @@ function ProductsTab({ onChange }) {
   const [suppliers, setSuppliers] = useState([]);
   const [reviewBusy, setReviewBusy] = useState("");
   const [specsBusy, setSpecsBusy] = useState("");
+  const [audit, setAudit] = useState(null);
+  const [auditing, setAuditing] = useState(false);
+  const [selected, setSelected] = useState([]);
+
+  const runAudit = async () => {
+    setAuditing(true);
+    try {
+      const r = await api.get("/admin/products/audit");
+      setAudit(r.data); setSelected(r.data.suspects.map((s) => s.id));
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setAuditing(false); }
+  };
+  const toggleSel = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const deleteSelected = async () => {
+    if (selected.length === 0) return;
+    if (!window.confirm(`Supprimer ${selected.length} produit(s) hors-niche ?`)) return;
+    try {
+      const r = await api.post("/admin/products/bulk-delete", { ids: selected });
+      toast.success(`${r.data.deleted} produit(s) supprimé(s)`);
+      setAudit(null); setSelected([]); load(); loadPStats();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
 
   const load = () => api.get("/products?size=100").then((r) => setProducts(r.data.items));
   const loadPStats = () => api.get("/admin/stats").then((r) => setPstats(r.data)).catch(() => {});
@@ -547,7 +569,39 @@ function ProductsTab({ onChange }) {
           <div className="bg-cream p-4"><p className="text-xs uppercase font-bold text-stone">Clients</p><p className="font-display font-black text-2xl mt-1">{pstats.total_users}</p></div>
         </div>
       )}
+      {audit && (
+        <div className="border border-brand/30 bg-brand/5 p-5 mb-6" data-testid="audit-panel">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <p className="font-display font-bold">Audit catalogue — {audit.suspect_count} produit(s) hors-niche sur {audit.total}</p>
+            <div className="flex gap-2">
+              <button onClick={deleteSelected} disabled={selected.length === 0} className="inline-flex items-center gap-1.5 bg-brand text-white px-4 py-2 rounded-full text-sm hover:bg-ink transition-colors disabled:opacity-40" data-testid="audit-delete-selected">
+                <Trash2 className="w-4 h-4" /> Supprimer la sélection ({selected.length})
+              </button>
+              <button onClick={() => setAudit(null)} className="border border-ink/20 px-4 py-2 rounded-full text-sm">Fermer</button>
+            </div>
+          </div>
+          {audit.suspect_count === 0 ? (
+            <p className="text-stone text-sm">🎉 Aucun produit hors-niche détecté. Votre catalogue est propre.</p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {audit.suspects.map((s) => (
+                <label key={s.id} className="flex items-center gap-3 bg-cream border border-ink/10 p-2.5 cursor-pointer" data-testid={`audit-item-${s.id}`}>
+                  <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSel(s.id)} data-testid={`audit-check-${s.id}`} />
+                  {s.image && <img src={s.image} alt="" className="w-10 h-10 object-cover bg-[#f0efed]" />}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{s.title}</p>
+                    <p className="text-xs text-stone">{s.category} · {s.price}€ · {s.source}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex justify-end gap-3 mb-6">
+        <button onClick={runAudit} disabled={auditing} className="inline-flex items-center gap-2 border border-ink/20 px-4 py-2.5 rounded-full text-sm hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid="audit-catalog-btn">
+          <Search className="w-4 h-4" /> {auditing ? "Analyse…" : "Auditer (hors-niche)"}
+        </button>
         <button onClick={syncStocks} disabled={syncing} className="inline-flex items-center gap-2 border border-ink/20 px-5 py-3 rounded-full font-medium hover:border-ink transition-colors disabled:opacity-50" data-testid="sync-stock-btn">
           <Download className="w-4 h-4" /> {syncing ? t.common.loading : t.admin.syncStock}
         </button>
