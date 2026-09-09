@@ -52,6 +52,17 @@ async def handle_paid_order(order_id: str):
         except Exception as e:
             logger.error(f"channel notify failed: {e}")
 
+    # 1d) Outgoing webhook order.paid (idempotent)
+    if not order.get("webhook_paid_sent"):
+        try:
+            await publicapimod.dispatch_event("order.paid", {
+                "order_id": order_id, "total": order.get("total"), "currency": order.get("currency", "EUR"),
+                "email": to_email, "items": [{"product_id": i.get("product_id"), "title": i.get("title"), "quantity": i.get("quantity")} for i in order.get("items", [])],
+            })
+            await db.orders.update_one({"id": order_id}, {"$set": {"webhook_paid_sent": True}})
+        except Exception as e:
+            logger.error(f"webhook order.paid failed: {e}")
+
     # 2) CJ fulfillment (idempotent)
     if _auto_fulfill() and cjmod.cj_configured() and not order.get("cj_order_id"):
         try:

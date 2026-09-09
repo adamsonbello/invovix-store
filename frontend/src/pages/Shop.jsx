@@ -13,24 +13,35 @@ export default function Shop() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const SIZE = 12;
 
   const cats = [
     { key: "", label: t.shop.filterAll },
     { key: "smart-home", label: t.nav.smartHome },
     { key: "workspace", label: t.nav.workspace },
     { key: "security", label: t.nav.security },
+    { key: "audio", label: t.nav.audio },
   ];
+
+  useEffect(() => { setPage(1); }, [category, q]);
 
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
     if (category) params.set("category", category);
     if (q) params.set("q", q);
+    params.set("page", page);
+    params.set("size", SIZE);
     api
       .get(`/products?${params.toString()}`)
-      .then((r) => setProducts(r.data.items))
+      .then((r) => { setProducts(r.data.items); setTotal(r.data.total || 0); })
       .finally(() => setLoading(false));
-  }, [category, q]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [category, q, page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / SIZE));
 
   const setCategory = (key) => {
     if (key) setSearchParams({ category: key });
@@ -82,10 +93,43 @@ export default function Shop() {
         ) : products.length === 0 ? (
           <div className="py-32 text-center text-stone" data-testid="shop-empty">{t.shop.empty}</div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 pb-32">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 pb-12">
             {products.map((p, i) => (
               <ProductCard key={p.id} product={p} index={i} />
             ))}
+          </div>
+        )}
+
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 pb-32" data-testid="shop-pagination">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-4 py-2 rounded-full border border-ink/20 text-sm hover:border-ink transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="page-prev"
+            >
+              ← Précédent
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                onClick={() => setPage(n)}
+                className={`w-10 h-10 rounded-full text-sm font-medium border transition-colors ${
+                  n === page ? "bg-ink text-cream border-ink" : "border-ink/20 hover:border-ink"
+                }`}
+                data-testid={`page-${n}`}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-4 py-2 rounded-full border border-ink/20 text-sm hover:border-ink transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="page-next"
+            >
+              Suivant →
+            </button>
           </div>
         )}
       </div>

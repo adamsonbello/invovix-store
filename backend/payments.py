@@ -169,3 +169,55 @@ async def payments_config():
         "paypal_client_id": os.environ.get("PAYPAL_CLIENT_ID", "") if paypal_configured() else "",
         "paypal_mode": PAYPAL_MODE,
     }
+
+
+async def _verify_paypal_webhook(headers, body: dict) -> bool:
+    """Vérifie la signature d'un webhook PayPal via l'API officielle."""
+    webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "").strip()
+    if not webhook_id:
+        return False
+    token = await _paypal_access_token()
+    verify_body = {
+        "auth_algo": headers.get("paypal-auth-algo"),
+        "cert_url": headers.get("paypal-cert-url"),
+        "transmission_id": headers.get("paypal-transmission-id"),
+        "transmission_sig": headers.get("paypal-transmission-sig"),
+        "transmission_time": headers.get("paypal-transmission-time"),
+        "webhook_id": webhook_id,
+        "webhook_event": body,
+    }
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.post(
+            f"{PAYPAL_BASE}/v1/notifications/verify-webhook-signature",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=verify_body,
+        )
+        if r.status_code >= 400:
+            return False
+        return r.json().get("verification_status") == "SUCCESS"
+
+
+@payments_router.post("/paypal/webhook")
+async def paypal_webhook(request: Request):
+    """Confirmation serveur-à-serveur PayPal (signée). Marque la commande payée + fulfillment."""
+    body = await request.json()
+    verified = await _verify_paypal_webhook(request.headers, body)
+    if not verified:
+        # Sans PAYPAL_WEBHOOK_ID configuré ou signature invalide : on n'accorde AUCUNE confiance.
+        raise HTTPException(400, "Signature webhook PayPal invalide ou non configurée (PAYPAL_WEBHOOK_ID)")
+    event_type = body.get("event_type", "")
+    resource = body.get("resource", {}) or {}
+    if event_type in ("PAYMENT.CAPTURE.COMPLETED", "CHECKOUT.ORDER.APPROVED"):
+        ref_id = None
+        pus = resource.get("purchase_units") or []
+        if pus:
+            ref_id = pus[0].get("reference_id")
+        ref_id = ref_id or (resource.get("supplementary_data", {}).get("related_ids", {}) or {}).get("order_id")
+        if ref_id:
+            res = await db.orders.update_one(
+                {"id": ref_id, "payment_status": {"$ne": "paid"}},
+                {"$set": {"payment_status": "paid", "status": "processing", "payment_method": "paypal", "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+            if res.modified_count:
+                asyncio.create_task(fulfillment.handle_paid_order(ref_id))
+    return {"status": "ok", "verified": True}

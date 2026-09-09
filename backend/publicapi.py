@@ -114,6 +114,7 @@ class WebhookInput(BaseModel):
     url: str
     event: str = "order.paid"
     active: bool = True
+    secret: str = ""
 
 
 @publicapi_router.get("/admin/webhooks")
@@ -128,7 +129,7 @@ async def create_webhook(body: WebhookInput, admin: dict = Depends(require_admin
         raise HTTPException(400, "Événement invalide")
     if not body.url.startswith("http"):
         raise HTTPException(400, "URL invalide")
-    doc = {"id": str(uuid.uuid4()), "url": body.url, "event": body.event,
+    doc = {"id": str(uuid.uuid4()), "url": body.url, "event": body.event, "secret": body.secret or uuid.uuid4().hex,
            "active": body.active, "last_status": None, "created_at": _now()}
     await db.webhooks.insert_one(doc)
     doc.pop("_id", None)
@@ -142,16 +143,22 @@ async def delete_webhook(webhook_id: str, admin: dict = Depends(require_admin)):
 
 
 async def dispatch_event(event: str, payload: dict):
-    """POST le payload à tous les webhooks actifs abonnés à l'événement."""
+    """POST le payload à tous les webhooks actifs abonnés à l'événement, signé en HMAC-SHA256."""
     hooks = await db.webhooks.find({"event": event, "active": True}, {"_id": 0}).to_list(100)
     if not hooks:
         return
-    import httpx
+    import httpx, json as _json, hmac, hashlib
     body = {"event": event, "data": payload, "sent_at": _now()}
+    raw = _json.dumps(body, separators=(",", ":"), default=str)
     async with httpx.AsyncClient(timeout=10) as c:
         for h in hooks:
+            headers = {"Content-Type": "application/json", "X-Invovix-Event": event}
+            secret = h.get("secret")
+            if secret:
+                sig = hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()
+                headers["X-Invovix-Signature"] = f"sha256={sig}"
             try:
-                r = await c.post(h["url"], json=body)
+                r = await c.post(h["url"], content=raw, headers=headers)
                 await db.webhooks.update_one({"id": h["id"]}, {"$set": {"last_status": r.status_code, "last_sent": _now()}})
             except Exception as e:
                 logger.error(f"webhook {h['id']} failed: {e}")

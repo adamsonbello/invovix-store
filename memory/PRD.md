@@ -154,6 +154,13 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 - **Stockage objet Emergent** (`backend/storage.py`) : uploads documents + images blog migrés du disque pod (éphémère) vers Emergent Object Storage (persistant en déploiement). Documents → `/api/admin/documents/{id}/download` (protégé) ; blog → `/api/media/{path}`. Init au démarrage. VÉRIFIÉ (upload/download/list/delete).
 
 
+
+### LOT 3 (partiel) — Robustesse technique — 2026-06
+Auto-vérifié (curl + script + screenshot).
+- **Pagination catalogue** (`Shop.jsx`) : 12 produits/page, contrôles Précédent/Suivant + numéros de page, reset à chaque changement de catégorie/recherche, scroll top. Catégorie **Audio** ajoutée aux filtres. Vérifié (27 produits → 3 pages).
+- **Signature webhook PayPal** : `POST /api/payments/paypal/webhook` vérifie la signature via l'API PayPal `verify-webhook-signature` (env `PAYPAL_WEBHOOK_ID`). Rejette (400) toute requête non signée / non configurée ; sur `PAYMENT.CAPTURE.COMPLETED`/`CHECKOUT.ORDER.APPROVED` → commande payée + fulfillment (idempotent). Vérifié (unsigned → 400).
+- **Webhooks sortants signés** (module 25 partiel) : `dispatch_event()` signe désormais en **HMAC-SHA256** (`X-Invovix-Signature`, `X-Invovix-Event`) ; secret auto-généré par webhook. Déclenché sur `order.paid` dans `fulfillment.handle_paid_order` (idempotent, flag `webhook_paid_sent`). Vérifié (dispatch réel → 200 + signature reçue).
+- **RESTE (non fait, plus lourd)** : Push web (notifications navigateur — nécessite VAPID + gestion permission, difficile à vérifier en preview) ; API GraphQL complète (module 25).
 ### LOT 2 — Conversion & confiance — 2026-06
 Auto-vérifié (curl audit + screenshots bannière/avis) ; démo reviews nettoyées.
 - **Épuration catalogue CJ** : `GET /api/admin/products/audit` (détecte les produits hors-niche via allowlist de mots-clés FR/EN ; ignore seed/manual) + `POST /api/admin/products/bulk-delete {ids}`. UI onglet Produits : bouton « Auditer (hors-niche) » + panneau de sélection/suppression groupée. (Audit réel : 1 suspect sur 27 = « Orchestral Music Stand ».)
