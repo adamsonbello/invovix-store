@@ -3,7 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { useI18n } from "@/i18n";
 
 const SITE = "https://invovix.store";
-const DEFAULT_IMG = `${SITE}/products/switch.jpg`;
+const DEFAULT_IMG = `${SITE}/og-image.jpg`;
 
 export default function SEO({ title, description, path = "", image, type = "website", jsonLd }) {
   const { lang } = useI18n();

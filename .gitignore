@@ -109,3 +109,4 @@ backend/storage/
 !.env.example
 !backend/.env.example
 !frontend/.env.example
+frontend/node_modules/.cache/default-development/25.pack

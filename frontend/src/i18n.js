@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 
 const translations = {
   fr: {
-    nav: { shop: "Boutique", smartHome: "Maison connectée", workspace: "Télétravail", security: "Sécurité", story: "Manifeste", blog: "Journal", contact: "Contact", account: "Compte", admin: "Admin", login: "Connexion", logout: "Déconnexion", cart: "Panier" },
+    nav: { shop: "Boutique", smartHome: "Maison connectée", workspace: "Télétravail", security: "Sécurité", audio: "Audio", story: "Manifeste", blog: "Journal", contact: "Contact", account: "Compte", admin: "Admin", login: "Connexion", logout: "Déconnexion", cart: "Panier" },
     hero: { overline: "Domotique premium · Livraison Europe", l1: "La maison", l2: "qui pense", l3: "à votre place.", sub: "Invovix conçoit un écosystème connecté pour la maison intelligente et le télétravail. Objets pensés, livrés dans toute la zone euro.", cta: "Découvrir la boutique", cta2: "Notre manifeste" },
     marquee: ["Maison connectée", "Télétravail", "Sécurité intelligente", "Livraison Europe", "Support FR / EN"],
     featured: { overline: "Sélection", title: "Les essentiels connectés", sub: "Une curation d'objets techniques pour transformer votre quotidien.", all: "Voir toute la boutique" },
@@ -36,7 +36,7 @@ const translations = {
     common: { loading: "Chargement…" },
   },
   en: {
-    nav: { shop: "Shop", smartHome: "Smart Home", workspace: "Remote Work", security: "Security", story: "Manifesto", blog: "Blog", contact: "Contact", account: "Account", admin: "Admin", login: "Login", logout: "Logout", cart: "Cart" },
+    nav: { shop: "Shop", smartHome: "Smart Home", workspace: "Remote Work", security: "Security", audio: "Audio", story: "Manifesto", blog: "Blog", contact: "Contact", account: "Account", admin: "Admin", login: "Login", logout: "Logout", cart: "Cart" },
     hero: { overline: "Premium smart home · Europe delivery", l1: "The home", l2: "that thinks", l3: "for you.", sub: "Invovix designs a connected ecosystem for the smart home and remote work. Considered objects, delivered across the eurozone.", cta: "Explore the shop", cta2: "Our manifesto" },
     marquee: ["Smart Home", "Remote Work", "Intelligent Security", "Europe Delivery", "EN / FR Support"],
     featured: { overline: "Selection", title: "Connected essentials", sub: "A curation of technical objects to transform your everyday.", all: "Browse the full shop" },

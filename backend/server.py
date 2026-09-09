@@ -25,7 +25,7 @@ import fulfillment as fulfillmod
 from payments import payments_router
 from extras import extras_router, validate_promo, seed_extras
 from ops import ops_router
-from ai import ai_router, optimize_product_core
+from ai import ai_router, optimize_product_core, translate_to_fr
 from erp import erp_router, run_rules
 from crm import crm_router, run_abandoned_recovery
 import marketing as mktmod
@@ -33,6 +33,7 @@ from marketing import marketing_router
 from notifications import notif_router
 import staff as staffmod
 from staff import staff_router
+import storage as objstore
 import twofa as twofamod
 from publicapi import publicapi_router
 from imports import imports_router
@@ -425,15 +426,28 @@ BLOG_DIR = "/app/frontend/public/blog"
 
 @api.post("/admin/upload")
 async def upload_image(file: UploadFile = File(...), admin: dict = Depends(require_area("catalog"))):
-    os.makedirs(BLOG_DIR, exist_ok=True)
     ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "png").lower()
     if ext not in ["png", "jpg", "jpeg", "webp", "gif"]:
         ext = "png"
-    fname = f"{uuid.uuid4().hex}.{ext}"
+    if not objstore.storage_configured():
+        raise HTTPException(503, "Stockage objet non configuré (EMERGENT_LLM_KEY manquant)")
     content = await file.read()
-    with open(os.path.join(BLOG_DIR, fname), "wb") as f:
-        f.write(content)
-    return {"url": f"/blog/{fname}"}
+    fid = uuid.uuid4().hex
+    path = f"{objstore.APP_NAME}/blog/{fid}.{ext}"
+    try:
+        result = objstore.put_object(path, content, objstore.guess_content_type(f"x.{ext}", "image/png"))
+    except Exception as e:
+        raise HTTPException(502, f"Échec du téléversement: {e}")
+    return {"url": f"/api/media/{result['path']}"}
+
+
+@api.get("/media/{path:path}")
+async def get_media(path: str):
+    try:
+        data, content_type = objstore.get_object(path)
+    except Exception:
+        raise HTTPException(404, "Média introuvable")
+    return Response(content=data, media_type=content_type)
 
 
 @api.get("/blog")
@@ -619,6 +633,58 @@ async def get_order(order_id: str, user: dict = Depends(get_current_user)):
     return o
 
 
+@api.post("/admin/products/{product_id}/import-cj-reviews")
+async def import_cj_reviews(product_id: str, admin: dict = Depends(require_area("catalog")), limit: int = 6, translate: bool = True):
+    """Importe les vrais avis clients CJ d'un produit (traduits en FR), marqués achat vérifié."""
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    cj_pid = product.get("cj_pid")
+    if not cj_pid:
+        raise HTTPException(400, "Ce produit n'est pas lié à CJDropshipping (pas de cj_pid).")
+    if not cjmod.cj_configured():
+        raise HTTPException(503, "Clé API CJDropshipping non configurée")
+    try:
+        comments = await cjmod.get_product_comments(cj_pid, page=1, size=max(limit * 3, 20))
+    except Exception as e:
+        raise HTTPException(502, f"Erreur CJDropshipping: {e}")
+    # priorise les avis positifs (>=4) puis complète
+    comments.sort(key=lambda c: int(c.get("score") or 0), reverse=True)
+    imported = 0
+    for c in comments:
+        if imported >= limit:
+            break
+        cid = str(c.get("commentId") or "")
+        if not cid:
+            continue
+        rid = f"cj-{cid}"
+        if await db.reviews.find_one({"id": rid}):
+            continue
+        rating = max(1, min(int(c.get("score") or 5), 5))
+        comment = (c.get("comment") or "").strip()
+        if translate and comment:
+            comment = await translate_to_fr(comment)
+        review = {
+            "id": rid,
+            "product_id": product_id,
+            "user_id": f"cj:{cid}",
+            "user_name": c.get("commentUser") or "Client vérifié",
+            "rating": rating,
+            "delivery_rating": rating,
+            "comment": comment,
+            "images": [u for u in (c.get("commentUrls") or []) if u][:3],
+            "country": c.get("countryCode") or "",
+            "source": "cj",
+            "verified_purchase": True,
+            "created_at": (c.get("commentDate") or datetime.now(timezone.utc).isoformat()),
+        }
+        await db.reviews.insert_one(review)
+        imported += 1
+    await _recompute_product_rating(product_id)
+    fresh = await db.products.find_one({"id": product_id}, {"_id": 0, "rating_avg": 1, "rating_count": 1})
+    return {"imported": imported, "rating_avg": fresh.get("rating_avg"), "rating_count": fresh.get("rating_count")}
+
+
 # ----------------------------- Admin -----------------------------
 @api.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(require_area("analytics"))):
@@ -626,13 +692,19 @@ async def admin_stats(admin: dict = Depends(require_area("analytics"))):
     paid_orders = await db.orders.count_documents({"payment_status": "paid"})
     total_products = await db.products.count_documents({})
     total_users = await db.users.count_documents({"role": "customer"})
+    cj_products = await db.products.count_documents({"source": "cjdropshipping"})
     revenue_cursor = db.orders.find({"payment_status": "paid"}, {"_id": 0, "total": 1})
     revenue = sum([o.get("total", 0) for o in await revenue_cursor.to_list(10000)])
+    # stock total du catalogue (stock_total synchronisé CJ, sinon champ stock)
+    prods = await db.products.find({}, {"_id": 0, "stock_total": 1, "stock": 1}).to_list(5000)
+    total_stock = sum(int(p.get("stock_total") if isinstance(p.get("stock_total"), int) else (p.get("stock") or 0)) for p in prods)
     return {
         "total_orders": total_orders,
         "paid_orders": paid_orders,
         "total_products": total_products,
         "total_users": total_users,
+        "cj_products": cj_products,
+        "total_stock": total_stock,
         "revenue": round(revenue, 2),
     }
 
@@ -963,6 +1035,42 @@ async def seed_products():
     logger.info("Sample products seeded")
 
 
+async def seed_audio():
+    """Seed 3-4 produits Audio de démo (catégorie audio) — idempotent."""
+    if await db.products.count_documents({"category": "audio"}) > 0:
+        return
+    audio = [
+        {"title": "Casque Sans Fil Sonic Pro", "title_en": "Sonic Pro Wireless Headphones",
+         "description": "Casque à réduction de bruit active, 40h d'autonomie et son haute fidélité pour une immersion totale.",
+         "description_en": "Active noise-cancelling headphones with 40h battery and hi-fi sound for total immersion.",
+         "price": 79.90, "compare_at_price": 119.90, "buy_price": 30.0,
+         "images": ["https://images.pexels.com/photos/7772548/pexels-photo-7772548.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"], "featured": True},
+        {"title": "Enceinte Connectée Aura Sound", "title_en": "Aura Sound Smart Speaker",
+         "description": "Enceinte intelligente compatible Alexa & Google, son 360° riche et assistant vocal intégré.",
+         "description_en": "Smart speaker compatible with Alexa & Google, rich 360° sound and built-in voice assistant.",
+         "price": 49.90, "compare_at_price": 74.90, "buy_price": 19.0,
+         "images": ["https://images.pexels.com/photos/1279365/pexels-photo-1279365.jpeg"], "featured": True},
+        {"title": "Écouteurs True Wireless Beat", "title_en": "Beat True Wireless Earbuds",
+         "description": "Écouteurs sans fil ultra-compacts, résistants à l'eau (IPX5) et boîtier de charge rapide.",
+         "description_en": "Ultra-compact true wireless earbuds, water-resistant (IPX5) with fast-charge case.",
+         "price": 39.90, "compare_at_price": 59.90, "buy_price": 14.0,
+         "images": ["https://images.pexels.com/photos/3081173/pexels-photo-3081173.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"], "featured": False},
+        {"title": "Mini Enceinte Nomade Pulse", "title_en": "Pulse Portable Mini Speaker",
+         "description": "Enceinte Bluetooth portable, basses puissantes et 12h d'autonomie pour la maison ou l'extérieur.",
+         "description_en": "Portable Bluetooth speaker with powerful bass and 12h battery for home or outdoor.",
+         "price": 29.90, "compare_at_price": 44.90, "buy_price": 11.0,
+         "images": ["https://images.pexels.com/photos/20323501/pexels-photo-20323501.jpeg"], "featured": False},
+    ]
+    for p in audio:
+        doc = dict(p)
+        doc["id"] = str(uuid.uuid4())
+        doc["currency"] = "EUR"; doc["category"] = "audio"; doc["stock"] = 100
+        doc["active"] = True; doc["source"] = "seed"
+        doc["created_at"] = datetime.now(timezone.utc).isoformat()
+        await db.products.insert_one(doc)
+    logger.info("Audio products seeded")
+
+
 async def _stock_sync_loop():
     """Periodically refresh CJ stock for all imported products (default: daily)."""
     from ops import _sync_all_stock
@@ -1019,7 +1127,13 @@ async def startup():
     await db.orders.create_index("id")
     await seed_admin()
     await seed_products()
+    await seed_audio()
     await seed_extras()
+    try:
+        objstore.init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.error(f"Object storage init failed: {e}")
     if os.environ.get("CJ_AUTO_SYNC", "true").lower() == "true":
         asyncio.create_task(_tracking_sync_loop())
     if os.environ.get("STOCK_AUTO_SYNC", "true").lower() == "true":

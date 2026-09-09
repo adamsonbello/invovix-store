@@ -23,6 +23,14 @@ export default function ProductDetail() {
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState(1);
   const [selVid, setSelVid] = useState("");
+  const [zoom, setZoom] = useState({ active: false, x: 50, y: 50 });
+
+  const onZoomMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 100;
+    const y = ((e.clientY - r.top) / r.height) * 100;
+    setZoom({ active: true, x, y });
+  };
 
   useEffect(() => {
     api.get(`/products/${id}`).then((r) => setProduct(r.data)).catch(() => navigate("/shop"));
@@ -97,9 +105,21 @@ export default function ProductDetail() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="relative aspect-square bg-[#f0efed] overflow-hidden"
+            className="relative aspect-square bg-[#f0efed] overflow-hidden cursor-zoom-in"
+            onMouseMove={onZoomMove}
+            onMouseLeave={() => setZoom((z) => ({ ...z, active: false }))}
+            data-testid="pd-image-zoom"
           >
-            <img src={displayImage} alt={title} className="absolute inset-0 w-full h-full object-cover" />
+            <img
+              src={displayImage}
+              alt={title}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{
+                transformOrigin: `${zoom.x}% ${zoom.y}%`,
+                transform: zoom.active ? "scale(2.4)" : "scale(1)",
+                transition: "transform 0.18s ease-out",
+              }}
+            />
             {hasCompare && !outOfStock && (
               <span className="absolute top-5 left-5 bg-brand text-white text-xs font-bold px-3 py-1.5 uppercase tracking-wide">
                 {t.product.save} {(product.compare_at_price - product.price).toFixed(2)}€

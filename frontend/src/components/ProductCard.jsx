@@ -1,10 +1,11 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Heart } from "lucide-react";
+import { Plus, Heart, GitCompare } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useCompare } from "@/context/CompareContext";
 import { toast } from "sonner";
 
 export default function ProductCard({ product, index = 0 }) {
@@ -12,6 +13,7 @@ export default function ProductCard({ product, index = 0 }) {
   const { add } = useCart();
   const { user } = useAuth();
   const { has, toggle } = useWishlist();
+  const { has: inCompare, toggle: toggleCompare } = useCompare();
   const navigate = useNavigate();
   const title = lang === "en" ? product.title_en || product.title : product.title;
   const hasCompare = product.compare_at_price > product.price;
@@ -65,6 +67,17 @@ export default function ProductCard({ product, index = 0 }) {
             aria-label="toggle wishlist"
           >
             <Heart className="w-4 h-4" fill={wished ? "currentColor" : "none"} />
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); toggleCompare(product.id); }}
+            className={`absolute top-3.5 right-14 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+              inCompare(product.id) ? "bg-ink text-cream" : "bg-cream/80 backdrop-blur text-ink hover:bg-cream"
+            }`}
+            data-testid={`compare-toggle-${product.id}`}
+            aria-label="toggle compare"
+            title="Comparer"
+          >
+            <GitCompare className="w-4 h-4" />
           </button>
           {!outOfStock && (
             <button

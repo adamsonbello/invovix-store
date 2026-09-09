@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap, Upload, FileText, TrendingUp, Store, Link2, CheckCircle2 } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap, Upload, FileText, TrendingUp, Store, Link2, CheckCircle2, MessageSquare } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -405,13 +405,26 @@ const EMPTY = { title: "", title_en: "", price: "", compare_at_price: "", catego
 function ProductsTab({ onChange }) {
   const { t } = useI18n();
   const [products, setProducts] = useState([]);
+  const [pstats, setPstats] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [suppliers, setSuppliers] = useState([]);
+  const [reviewBusy, setReviewBusy] = useState("");
 
   const load = () => api.get("/products?size=100").then((r) => setProducts(r.data.items));
-  useEffect(() => { load(); api.get("/admin/suppliers").then((r) => setSuppliers(r.data.items)).catch(() => {}); }, []);
+  const loadPStats = () => api.get("/admin/stats").then((r) => setPstats(r.data)).catch(() => {});
+  useEffect(() => { load(); loadPStats(); api.get("/admin/suppliers").then((r) => setSuppliers(r.data.items)).catch(() => {}); }, []);
+
+  const importReviews = async (id) => {
+    setReviewBusy(id);
+    try {
+      const r = await api.post(`/admin/products/${id}/import-cj-reviews`);
+      toast.success(`${r.data.imported} avis CJ importés (note ${r.data.rating_avg || "-"} / ${r.data.rating_count} avis)`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setReviewBusy(""); }
+  };
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setShowForm(true); };
   const openEdit = (p) => {
@@ -515,6 +528,14 @@ function ProductsTab({ onChange }) {
 
   return (
     <div data-testid="admin-products-tab">
+      {pstats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-ink/10 border border-ink/10 mb-6" data-testid="products-inventory-stats">
+          <div className="bg-cream p-4"><p className="text-xs uppercase font-bold text-stone">Produits catalogue</p><p className="font-display font-black text-2xl mt-1">{pstats.total_products}</p></div>
+          <div className="bg-cream p-4"><p className="text-xs uppercase font-bold text-stone">Importés de CJ</p><p className="font-display font-black text-2xl mt-1 text-brand" data-testid="stat-cj-products">{pstats.cj_products}</p></div>
+          <div className="bg-cream p-4"><p className="text-xs uppercase font-bold text-stone">Stock total</p><p className="font-display font-black text-2xl mt-1" data-testid="stat-total-stock">{pstats.total_stock?.toLocaleString()}</p></div>
+          <div className="bg-cream p-4"><p className="text-xs uppercase font-bold text-stone">Clients</p><p className="font-display font-black text-2xl mt-1">{pstats.total_users}</p></div>
+        </div>
+      )}
       <div className="flex justify-end gap-3 mb-6">
         <button onClick={syncStocks} disabled={syncing} className="inline-flex items-center gap-2 border border-ink/20 px-5 py-3 rounded-full font-medium hover:border-ink transition-colors disabled:opacity-50" data-testid="sync-stock-btn">
           <Download className="w-4 h-4" /> {syncing ? t.common.loading : t.admin.syncStock}
@@ -539,6 +560,11 @@ function ProductsTab({ onChange }) {
             <button onClick={() => optimizeOne(p.id)} disabled={aiBusy === p.id} className="inline-flex items-center gap-1.5 text-sm border border-ink/20 rounded-full px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`ai-optimize-${p.id}`}>
               <Sparkles className="w-3.5 h-3.5" /> {aiBusy === p.id ? "…" : "IA"}
             </button>
+            {(p.cj_pid || p.source === "cjdropshipping") && (
+              <button onClick={() => importReviews(p.id)} disabled={reviewBusy === p.id} className="inline-flex items-center gap-1.5 text-sm border border-ink/20 rounded-full px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`import-cj-reviews-${p.id}`} title="Importer les avis clients CJ">
+                <MessageSquare className="w-3.5 h-3.5" /> {reviewBusy === p.id ? "…" : "Avis CJ"}
+              </button>
+            )}
             <button onClick={() => openEdit(p)} className="text-sm text-stone hover:text-ink px-3" data-testid={`edit-${p.id}`}>{t.admin.edit}</button>
             <button onClick={() => del(p.id)} className="text-brand hover:opacity-70 p-2" data-testid={`delete-${p.id}`}><Trash2 className="w-4 h-4" /></button>
           </div>

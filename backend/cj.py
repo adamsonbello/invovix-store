@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from urllib.parse import quote
 import httpx
@@ -44,11 +45,14 @@ async def _ensure_access_token() -> str:
     return data["data"]["accessToken"]
 
 
-async def cj_request(method: str, path: str, *, params=None, json=None):
+async def cj_request(method: str, path: str, *, params=None, json=None, _retry_429=2):
     token = await _ensure_access_token()
     headers = {"CJ-Access-Token": token, "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=40) as c:
         r = await c.request(method, f"{CJ_BASE_URL}{path}", headers=headers, params=params, json=json)
+        if r.status_code == 429 and _retry_429 > 0:
+            await asyncio.sleep(1.2)
+            return await cj_request(method, path, params=params, json=json, _retry_429=_retry_429 - 1)
         if r.status_code >= 400:
             raise RuntimeError(f"CJ HTTP {r.status_code}: {r.text[:400]}")
         data = r.json()
@@ -79,6 +83,35 @@ async def search_products(keyword: str, page: int = 1, size: int = 20, country_c
     return payload.get("list") or []
 
 
+def _concise_description(raw_desc: str) -> str:
+    """Nettoie une description CJ (HTML) et ne garde que l'essentiel :
+    on retire le HTML/entités/mentions logistiques, et on garde les premières
+    phrases utiles (jusqu'à ~600 caractères, coupé proprement)."""
+    if not raw_desc:
+        return ""
+    txt = re.sub(r"<[^>]+>", " ", raw_desc)
+    txt = re.sub(r"&[a-zA-Z#0-9]+;", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    # retire le bruit fréquent des fiches fournisseur
+    noise = re.compile(r"(?i)(shipping|delivery|processing time|please note|dropship|wholesale|our store|contact us|feedback|tracking number|warehouse)")
+    sentences = re.split(r"(?<=[.!?])\s+", txt)
+    kept = []
+    total = 0
+    for s in sentences:
+        if noise.search(s):
+            continue
+        if len(s) < 3:
+            continue
+        kept.append(s)
+        total += len(s)
+        if total >= 600:
+            break
+    result = " ".join(kept).strip()
+    if not result:
+        result = txt[:600].strip()
+    return result[:800]
+
+
 def normalize_cj_product(cj: dict) -> dict:
     """Map a CJ product detail payload into an Invovix product document."""
     variants = cj.get("variants") or []
@@ -101,9 +134,7 @@ def normalize_cj_product(cj: dict) -> dict:
     raw_imgs = [u for u in images[:6] if u]
 
     raw_desc = cj.get("description") or ""
-    clean_desc = re.sub(r"<[^>]+>", " ", raw_desc)
-    clean_desc = re.sub(r"&[a-zA-Z]+;", " ", clean_desc)
-    clean_desc = re.sub(r"\s+", " ", clean_desc).strip()
+    clean_desc = _concise_description(raw_desc)
 
     return {
         "id": str(uuid.uuid4()),
@@ -131,6 +162,13 @@ async def import_product(pid: str) -> dict:
     data = await cj_request("GET", "/product/query", params={"pid": pid})
     detail = data.get("data") or {}
     return normalize_cj_product(detail)
+
+
+async def get_product_comments(cj_pid: str, page: int = 1, size: int = 20) -> list:
+    """Récupère les avis clients réels d'un produit CJ."""
+    data = await cj_request("GET", "/product/productComments", params={"pid": cj_pid, "pageNum": page, "pageSize": size})
+    payload = data.get("data") or {}
+    return payload.get("list") or []
 
 
 # ----------------------------- Variants & stock -----------------------------

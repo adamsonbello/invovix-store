@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/i18n";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
+import { CompareProvider } from "@/context/CompareContext";
 import { Toaster } from "@/components/ui/sonner";
 import api from "@/lib/api";
 import Layout from "@/components/Layout";
@@ -28,6 +29,7 @@ import FAQ from "@/pages/FAQ";
 import Wishlist from "@/pages/Wishlist";
 import Legal from "@/pages/Legal";
 import PublicStore from "@/pages/PublicStore";
+import Compare from "@/pages/Compare";
 
 function AppRoutes() {
   return (
@@ -47,6 +49,7 @@ function AppRoutes() {
         <Route path="/blog" element={<Blog />} />
         <Route path="/blog/:slug" element={<BlogPost />} />
         <Route path="/faq" element={<FAQ />} />
+        <Route path="/compare" element={<Compare />} />
         <Route path="/legal/:doc" element={<Legal />} />
         <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
         <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
@@ -89,9 +92,11 @@ function App() {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
+            <CompareProvider>
             <BrowserRouter>
               <DomainGate />
             </BrowserRouter>
+            </CompareProvider>
             </WishlistProvider>
             <Toaster position="bottom-right" />
           </CartProvider>

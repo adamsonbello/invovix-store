@@ -364,3 +364,17 @@ Question de l'administrateur :
 @ai_router.get("/admin/ai/status")
 async def ai_status(admin: dict = Depends(require_area("ai"))):
     return {"configured": bool(EMERGENT_LLM_KEY), "text_model": TEXT_MODEL, "image_model": IMAGE_MODEL}
+
+
+async def translate_to_fr(text: str) -> str:
+    """Traduit un texte en français (best-effort). Renvoie l'original si l'IA est indisponible."""
+    text = (text or "").strip()
+    if not text or not EMERGENT_LLM_KEY:
+        return text
+    try:
+        system = "Tu es un traducteur. Traduis fidèlement en français naturel. Réponds UNIQUEMENT par la traduction, sans guillemets ni commentaire."
+        out = await _llm_text(system, text)
+        return (out or text).strip().strip('"')
+    except Exception as e:
+        logger.error(f"translate error: {e}")
+        return text

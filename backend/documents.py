@@ -1,9 +1,8 @@
 """Module 24 — Gestion documentaire.
-Stockage privé (non public) de contrats, factures fournisseurs, PDF juridiques, etc.
-Les fichiers sont servis via un endpoint protégé (jamais depuis /public)."""
-import os
+Stockage objet Emergent (persistant). Fichiers privés servis via endpoint protégé."""
 import uuid
 import logging
+from io import BytesIO
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -11,11 +10,11 @@ from fastapi.responses import StreamingResponse
 
 from database import db
 from security import require_area
+import storage as objstore
 
 logger = logging.getLogger("invovix")
 documents_router = APIRouter(prefix="/api")
 
-STORAGE_DIR = "/app/backend/storage/documents"
 CATEGORIES = {"contract", "invoice", "supplier", "legal", "shipping", "other"}
 MAX_BYTES = 25 * 1024 * 1024  # 25 Mo
 
@@ -59,28 +58,32 @@ async def upload_document(
 ):
     if category not in CATEGORIES:
         category = "other"
+    if not objstore.storage_configured():
+        raise HTTPException(503, "Stockage objet non configuré (EMERGENT_LLM_KEY manquant)")
     content = await file.read()
     if len(content) > MAX_BYTES:
         raise HTTPException(413, "Fichier trop volumineux (max 25 Mo)")
-    os.makedirs(STORAGE_DIR, exist_ok=True)
     did = str(uuid.uuid4())
     orig = file.filename or "document"
     ext = orig.rsplit(".", 1)[-1].lower() if "." in orig else "bin"
-    stored = f"{did}.{ext}"
-    with open(os.path.join(STORAGE_DIR, stored), "wb") as f:
-        f.write(content)
+    content_type = file.content_type or objstore.guess_content_type(orig)
+    path = f"{objstore.APP_NAME}/documents/{did}.{ext}"
+    try:
+        result = objstore.put_object(path, content, content_type)
+    except Exception as e:
+        raise HTTPException(502, f"Échec du téléversement: {e}")
     doc = {
         "id": did,
         "name": name.strip() or orig,
         "filename": orig,
-        "stored": stored,
-        "content_type": file.content_type or "application/octet-stream",
+        "storage_path": result["path"],
+        "content_type": content_type,
         "category": category,
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
         "notes": notes.strip(),
         "linked_order": linked_order.strip(),
         "linked_supplier": linked_supplier.strip(),
-        "size": len(content),
+        "size": result.get("size", len(content)),
         "uploaded_by": admin.get("name", ""),
         "created_at": _now(),
     }
@@ -94,26 +97,18 @@ async def download_document(doc_id: str, admin: dict = Depends(require_area("ope
     doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Document introuvable")
-    path = os.path.join(STORAGE_DIR, doc["stored"])
-    if not os.path.exists(path):
-        raise HTTPException(404, "Fichier manquant sur le disque")
-    with open(path, "rb") as f:
-        data = f.read()
-    from io import BytesIO
+    try:
+        data, content_type = objstore.get_object(doc["storage_path"])
+    except Exception as e:
+        raise HTTPException(404, f"Fichier introuvable dans le stockage: {e}")
     return StreamingResponse(
         BytesIO(data),
-        media_type=doc.get("content_type", "application/octet-stream"),
+        media_type=doc.get("content_type", content_type),
         headers={"Content-Disposition": f'attachment; filename="{doc["filename"]}"'},
     )
 
 
 @documents_router.delete("/admin/documents/{doc_id}")
 async def delete_document(doc_id: str, admin: dict = Depends(require_area("operations"))):
-    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
-    if doc:
-        try:
-            os.remove(os.path.join(STORAGE_DIR, doc["stored"]))
-        except Exception:
-            pass
-        await db.documents.delete_one({"id": doc_id})
+    await db.documents.delete_one({"id": doc_id})
     return {"ok": True}

@@ -7,6 +7,7 @@ import PromoBanner from "@/components/PromoBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import NewsletterPopup from "@/components/NewsletterPopup";
 import CookieConsent from "@/components/CookieConsent";
+import CompareBar from "@/components/CompareBar";
 import api from "@/lib/api";
 import { useI18n } from "@/i18n";
 import { loadRecaptcha } from "@/lib/recaptcha";
@@ -67,6 +68,7 @@ export default function Layout() {
       )}
       <NewsletterPopup />
       <CookieConsent />
+      <CompareBar />
     </div>
   );
 }

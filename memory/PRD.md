@@ -143,7 +143,17 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 - UI Admin > onglet « Multi-boutiques » : formulaire (chips catégories, couleur accent), liste avec compteur produits + slug d'API vitrine. VÉRIFIÉ.
 - Dépendances ajoutées : openpyxl, beautifulsoup4, lxml.
 
-### Rendu public par domaine (vitrine multi-boutique) — 2026-06
+### Lot fonctionnalités (zoom, avis CJ, comparateur, Audio, identité) — 2026-06
+- **(1) Zoom/loupe** sur l'image en page produit (survol → agrandissement au curseur). `ProductDetail.jsx`. VÉRIFIÉ.
+- **(2) Description CJ concise** : `_concise_description()` dans `cj.py` retire HTML/bruit logistique et garde l'essentiel (~600 car.).
+- **(3) Compteur inventaire CJ** dans l'admin (onglet Produits) : produits catalogue / importés de CJ / stock total / clients. `/api/admin/stats` enrichi (`cj_products`, `total_stock`).
+- **(6) Import des vrais avis CJ** : `POST /api/admin/products/{id}/import-cj-reviews` (bouton « Avis CJ » par produit). Récupère `/product/productComments`, traduit en FR (Emergent LLM), marque « achat vérifié », recalcule la note. Retry auto sur 429 (limite CJ 1 req/s). NB : n'importe que si le produit CJ a des avis (nos 15 produits CJ actuels en ont 0 avec ce compte). Pipeline traduction+stockage+note VÉRIFIÉ.
+- **(8) Comparateur produits** (2 à 4) : `CompareContext` (localStorage), bouton sur ProductCard, barre flottante `CompareBar`, page `/compare` (tableau comparatif prix/marque/note/stock/livraison). VÉRIFIÉ (3 colonnes).
+- **Catégorie Audio** : `seed_audio()` (4 produits démo) + label i18n + lien navbar. VÉRIFIÉ.
+- **Identité numérique** : logo wordmark « INVOVIX. » (point rouge), favicon.ico + favicon-32 + icônes PWA (192/512/maskable/apple-touch) régénérés, image de partage `og-image.jpg` (SEO/OG mis à jour). Générés via Nano Banana.
+- **Stockage objet Emergent** (`backend/storage.py`) : uploads documents + images blog migrés du disque pod (éphémère) vers Emergent Object Storage (persistant en déploiement). Documents → `/api/admin/documents/{id}/download` (protégé) ; blog → `/api/media/{path}`. Init au démarrage. VÉRIFIÉ (upload/download/list/delete).
+
+
 - **Page vitrine standalone** `/app/frontend/src/pages/PublicStore.jsx`, route `/b/:slug` (hors Layout principal) : header/hero/grille/footer entièrement **thématisés** par la couleur d'accent de la boutique, nom + tagline, badges promo, panier partagé Invovix, SEO (title/description/OG) par boutique, filtres catégories. Feeling « boutique totalement différente » sur une seule base de code.
 - **Détection par domaine** (`DomainGate` dans App.js) : en production, un visiteur sur `maison.invovix.store` voit automatiquement la vitrine dédiée (résolue via `GET /api/public/store-resolve?host=`). Les domaines primaires (invovix.store, preview, localhost) rendent le site principal. En preview : accès direct `/b/:slug`.
 - Backend : endpoint `GET /api/public/store-resolve` ajouté à `stores.py`. Boutique démo « Invovix Maison » (slug `invovix-maison`, domaine `maison.invovix.store`, accent vert, catégorie smart-home) créée pour SEO par niche.

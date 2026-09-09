@@ -29,6 +29,7 @@ export default function Header({ hasBanner = false }) {
     { to: "/shop?category=smart-home", label: t.nav.smartHome },
     { to: "/shop?category=workspace", label: t.nav.workspace },
     { to: "/shop?category=security", label: t.nav.security },
+    { to: "/shop?category=audio", label: t.nav.audio },
     { to: "/blog", label: t.nav.blog },
     { to: "/contact", label: t.nav.contact },
   ];
