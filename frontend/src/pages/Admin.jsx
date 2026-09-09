@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap, Upload, FileText, TrendingUp, Store, Link2, CheckCircle2, MessageSquare } from "lucide-react";
+import { Euro, ShoppingCart, Package, Users, Plus, Trash2, Download, Search, X, Edit, Mail, Tag, Settings, Sparkles, Wand2, ImagePlus, Gauge, Bot, Send, Gift, Zap, Upload, FileText, TrendingUp, Store, Link2, CheckCircle2, MessageSquare, Bell, BellRing } from "lucide-react";
 import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -1663,6 +1663,7 @@ const MARKETING_SUBTABS = [
   { key: "campaigns", label: "Campagnes email", icon: Mail },
   { key: "bundles", label: "Packs / Bundles", icon: Gift },
   { key: "flash", label: "Ventes flash", icon: Zap },
+  { key: "push", label: "Notifications push", icon: Bell },
 ];
 
 function MarketingTab() {
@@ -1683,6 +1684,45 @@ function MarketingTab() {
       {sub === "campaigns" && <CampaignsPanel />}
       {sub === "bundles" && <BundlesPanel />}
       {sub === "flash" && <FlashPanel />}
+      {sub === "push" && <PushPanel />}
+    </div>
+  );
+}
+
+function PushPanel() {
+  const [stats, setStats] = useState(null);
+  const [form, setForm] = useState({ title: "", body: "", url: "/" });
+  const [sending, setSending] = useState(false);
+  useEffect(() => { api.get("/admin/push/stats").then((r) => setStats(r.data)).catch(() => {}); }, []);
+  const send = async (e) => {
+    e.preventDefault();
+    if (!form.title || !form.body) { toast.error("Titre et message requis"); return; }
+    setSending(true);
+    try {
+      const r = await api.post("/admin/push/send", form);
+      toast.success(`Notification envoyée : ${r.data.sent} reçue(s), ${r.data.failed} échec(s)`);
+    } catch (e2) { toast.error(formatApiError(e2.response?.data?.detail)); }
+    finally { setSending(false); }
+  };
+  return (
+    <div className="max-w-xl" data-testid="admin-push-panel">
+      <div className="border border-ink/10 p-4 mb-6 flex items-center gap-3">
+        <BellRing className="w-6 h-6 text-brand" />
+        <div>
+          <p className="font-display font-bold text-2xl" data-testid="push-subscribers">{stats?.subscribers ?? "…"}</p>
+          <p className="text-stone text-sm">abonné(s) aux notifications {stats && !stats.configured && "· ⚠️ clés VAPID manquantes"}</p>
+        </div>
+      </div>
+      <form onSubmit={send} className="space-y-4 border border-ink/10 p-5">
+        <p className="font-display font-bold text-lg">Envoyer une notification push</p>
+        <In label="Titre" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+        <div>
+          <label className="text-xs uppercase font-bold text-stone mb-2 block">Message</label>
+          <textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} rows={3} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none" data-testid="push-body" />
+        </div>
+        <In label="Lien au clic (ex: /shop?category=audio)" value={form.url} onChange={(v) => setForm({ ...form, url: v })} />
+        <button type="submit" disabled={sending} className="w-full bg-ink text-cream py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="push-send-btn">{sending ? "Envoi…" : "Envoyer à tous les abonnés"}</button>
+      </form>
     </div>
   );
 }

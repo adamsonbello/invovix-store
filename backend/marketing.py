@@ -202,7 +202,7 @@ async def list_flash(admin: dict = Depends(require_area("marketing"))):
 
 
 @marketing_router.post("/admin/flash-sales")
-async def create_flash(body: FlashInput, admin: dict = Depends(require_area("marketing"))):
+async def create_flash(body: FlashInput, background_tasks: BackgroundTasks, admin: dict = Depends(require_area("marketing"))):
     if body.scope not in ("category", "product", "all"):
         raise HTTPException(400, "Scope invalide")
     doc = body.model_dump()
@@ -210,6 +210,15 @@ async def create_flash(body: FlashInput, admin: dict = Depends(require_area("mar
     doc["created_at"] = _iso()
     await db.flash_sales.insert_one(doc)
     doc.pop("_id", None)
+    # Notification push aux abonnés (best-effort)
+    if doc.get("active"):
+        try:
+            import push as pushmod
+            title = f"⚡ Vente flash -{int(doc.get('discount', 0))}%"
+            label = {"category": "une catégorie", "product": "un produit", "all": "tout le catalogue"}.get(doc.get("scope"), "")
+            background_tasks.add_task(pushmod.send_push_to_all, title, f"Profitez de -{int(doc.get('discount',0))}% sur {label} sur Invovix. Foncez !", "/shop")
+        except Exception:
+            pass
     return doc
 
 

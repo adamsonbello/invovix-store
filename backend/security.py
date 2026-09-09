@@ -84,6 +84,14 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def get_current_user_optional(request: Request):
+    """Renvoie l'utilisateur si authentifié, sinon None (pas d'erreur)."""
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
+
+
 # ----------------------------- RBAC (Phase 4) -----------------------------
 STAFF_ROLES = {"admin", "manager", "marketing", "support", "accounting"}
 ALL_AREAS = {"analytics", "catalog", "orders", "content", "marketing",

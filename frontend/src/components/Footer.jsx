@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import api, { formatApiError } from "@/lib/api";
 import { executeRecaptcha } from "@/lib/recaptcha";
 import { toast } from "sonner";
+import PushOptIn from "@/components/PushOptIn";
 
 export default function Footer() {
   const { t } = useI18n();
@@ -59,6 +60,9 @@ export default function Footer() {
                 <ArrowUpRight className="w-5 h-5" />
               </button>
             </form>
+            <div className="mt-4">
+              <PushOptIn />
+            </div>
           </div>
         </div>
 

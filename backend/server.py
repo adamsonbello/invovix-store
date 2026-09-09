@@ -34,6 +34,8 @@ from notifications import notif_router
 import staff as staffmod
 from staff import staff_router
 import storage as objstore
+from push import push_router, send_push_to_all
+from graphql_api import graphql_app
 import twofa as twofamod
 from publicapi import publicapi_router
 from imports import imports_router
@@ -1087,6 +1089,8 @@ app.include_router(imports_router)
 app.include_router(documents_router)
 app.include_router(predict_router)
 app.include_router(stores_router)
+app.include_router(push_router)
+app.include_router(graphql_app)
 
 app.add_middleware(
     CORSMiddleware,

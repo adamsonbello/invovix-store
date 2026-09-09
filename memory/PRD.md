@@ -155,7 +155,13 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 
 
 
-### LOT 3 (partiel) — Robustesse technique — 2026-06
+### LOT 3B — Push web (VAPID) & API GraphQL — 2026-06
+Auto-vérifié (curl + screenshots). Catalogue nettoyé : « Orchestral Music Stand » supprimé (1 hors-niche).
+- **Web Push (VAPID)** (`push.py`) : clés VAPID générées (.env : VAPID_PUBLIC_KEY/PRIVATE_KEY/CLAIM_EMAIL). Endpoints : `GET /api/push/vapid-public-key`, `POST /api/push/subscribe|unsubscribe`, `GET /api/admin/push/stats`, `POST /api/admin/push/send` (require marketing). `send_push_to_all()` via pywebpush + purge des abonnements 404/410. SW (`service-worker.js`) : handlers `push` + `notificationclick`. Front : `PushOptIn.jsx` (bouton « Activer les notifications » dans le Footer) + onglet Admin Marketing « Notifications push » (compteur + formulaire d'envoi). **Auto-push** à la création d'une vente flash (marketing.py). NB : la livraison réelle exige la permission navigateur (non testable en preview headless) ; endpoints vérifiés par curl.
+- **API GraphQL** (`graphql_api.py`, strawberry) montée sur `/api/graphql` (+ GraphiQL). Requêtes lecture catalogue : `products(category,q,page,size)`, `product(id)`, `categories`. Vérifié (query renvoie produits + catégories).
+- Dépendances ajoutées : pywebpush, py-vapid, strawberry-graphql.
+
+
 Auto-vérifié (curl + script + screenshot).
 - **Pagination catalogue** (`Shop.jsx`) : 12 produits/page, contrôles Précédent/Suivant + numéros de page, reset à chaque changement de catégorie/recherche, scroll top. Catégorie **Audio** ajoutée aux filtres. Vérifié (27 produits → 3 pages).
 - **Signature webhook PayPal** : `POST /api/payments/paypal/webhook` vérifie la signature via l'API PayPal `verify-webhook-signature` (env `PAYPAL_WEBHOOK_ID`). Rejette (400) toute requête non signée / non configurée ; sur `PAYMENT.CAPTURE.COMPLETED`/`CHECKOUT.ORDER.APPROVED` → commande payée + fulfillment (idempotent). Vérifié (unsigned → 400).
