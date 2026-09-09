@@ -153,6 +153,12 @@ Livré et testé (iteration 9 : 21/21 pytest backend + 100% frontend, aucun bug 
 - **Identité numérique** : logo wordmark « INVOVIX. » (point rouge), favicon.ico + favicon-32 + icônes PWA (192/512/maskable/apple-touch) régénérés, image de partage `og-image.jpg` (SEO/OG mis à jour). Générés via Nano Banana.
 - **Stockage objet Emergent** (`backend/storage.py`) : uploads documents + images blog migrés du disque pod (éphémère) vers Emergent Object Storage (persistant en déploiement). Documents → `/api/admin/documents/{id}/download` (protégé) ; blog → `/api/media/{path}`. Init au démarrage. VÉRIFIÉ (upload/download/list/delete).
 
+### LOT 1 — Comparateur (catégorie + specs) & Espace client (coordonnées + messagerie) — 2026-06
+Livré et testé (iteration 10 : 6/6 pytest backend + 100% frontend, aucun bug).
+- **Comparateur** : contrainte **même catégorie** (CompareContext stocke {id,category}, toast si catégorie différente) + section **« Caractéristiques techniques »** (specs CJ). `cj.py extract_specs()` (nettoyage listes JSON, filtre valeurs non latines/junk) → Poids/Emballage/Catégorie/Matière/Unité. Endpoint admin `POST /api/admin/products/{id}/sync-specs` + bouton « Specs CJ » par produit. Specs stockées à l'import CJ + exposées dans `/api/products/{id}`.
+- **Espace client** : `GET/PUT /api/account/profile` (nom, téléphone, adresse, ville, CP, pays ; email lecture seule) — formulaire « Mes coordonnées ». `POST /api/account/message` → contact `source=client` + notif Brevo — formulaire « Contacter la direction ».
+- **Réponse admin** : `POST /api/admin/contacts/{id}/reply` (email Brevo + thread stocké). UI Messages : badge « Client », bouton Répondre. NB : Brevo peut renvoyer `sent=false` en preview → réponse quand même enregistrée.
+
 
 - **Page vitrine standalone** `/app/frontend/src/pages/PublicStore.jsx`, route `/b/:slug` (hors Layout principal) : header/hero/grille/footer entièrement **thématisés** par la couleur d'accent de la boutique, nom + tagline, badges promo, panier partagé Invovix, SEO (title/description/OG) par boutique, filtres catégories. Feeling « boutique totalement différente » sur une seule base de code.
 - **Détection par domaine** (`DomainGate` dans App.js) : en production, un visiteur sur `maison.invovix.store` voit automatiquement la vitrine dédiée (résolue via `GET /api/public/store-resolve?host=`). Les domaines primaires (invovix.store, preview, localhost) rendent le site principal. En preview : accès direct `/b/:slug`.

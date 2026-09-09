@@ -411,6 +411,7 @@ function ProductsTab({ onChange }) {
   const [form, setForm] = useState(EMPTY);
   const [suppliers, setSuppliers] = useState([]);
   const [reviewBusy, setReviewBusy] = useState("");
+  const [specsBusy, setSpecsBusy] = useState("");
 
   const load = () => api.get("/products?size=100").then((r) => setProducts(r.data.items));
   const loadPStats = () => api.get("/admin/stats").then((r) => setPstats(r.data)).catch(() => {});
@@ -424,6 +425,16 @@ function ProductsTab({ onChange }) {
       load();
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     finally { setReviewBusy(""); }
+  };
+
+  const syncSpecs = async (id) => {
+    setSpecsBusy(id);
+    try {
+      const r = await api.post(`/admin/products/${id}/sync-specs`);
+      const n = Object.keys(r.data.specs || {}).length;
+      toast.success(n ? `${n} caractéristique(s) synchronisée(s)` : "Aucune caractéristique CJ trouvée");
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSpecsBusy(""); }
   };
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setShowForm(true); };
@@ -563,6 +574,11 @@ function ProductsTab({ onChange }) {
             {(p.cj_pid || p.source === "cjdropshipping") && (
               <button onClick={() => importReviews(p.id)} disabled={reviewBusy === p.id} className="inline-flex items-center gap-1.5 text-sm border border-ink/20 rounded-full px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`import-cj-reviews-${p.id}`} title="Importer les avis clients CJ">
                 <MessageSquare className="w-3.5 h-3.5" /> {reviewBusy === p.id ? "…" : "Avis CJ"}
+              </button>
+            )}
+            {(p.cj_pid || p.source === "cjdropshipping") && (
+              <button onClick={() => syncSpecs(p.id)} disabled={specsBusy === p.id} className="inline-flex items-center gap-1.5 text-sm border border-ink/20 rounded-full px-3 py-1.5 hover:border-brand hover:text-brand transition-colors disabled:opacity-50" data-testid={`sync-specs-${p.id}`} title="Synchroniser les caractéristiques CJ">
+                <Gauge className="w-3.5 h-3.5" /> {specsBusy === p.id ? "…" : "Specs CJ"}
               </button>
             )}
             <button onClick={() => openEdit(p)} className="text-sm text-stone hover:text-ink px-3" data-testid={`edit-${p.id}`}>{t.admin.edit}</button>
@@ -951,8 +967,23 @@ function BlogTab() {
 function MessagesTab() {
   const { t, lang } = useI18n();
   const [items, setItems] = useState([]);
+  const [replyFor, setReplyFor] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => { api.get("/admin/contacts").then((r) => setItems(r.data.items)).catch(() => {}); }, []);
+  const load = () => api.get("/admin/contacts").then((r) => setItems(r.data.items)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const sendReply = async (id) => {
+    if (!replyText.trim()) { toast.error("Écrivez une réponse"); return; }
+    setSending(true);
+    try {
+      const r = await api.post(`/admin/contacts/${id}/reply`, { message: replyText });
+      toast.success(r.data.sent ? "Réponse envoyée par email" : "Réponse enregistrée (email non configuré)");
+      setReplyFor(""); setReplyText(""); load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSending(false); }
+  };
 
   return (
     <div data-testid="admin-messages-tab">
@@ -964,7 +995,10 @@ function MessagesTab() {
             <div key={m.id} className="border border-ink/10 p-5" data-testid={`admin-message-${m.id}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-display font-bold text-lg">{m.subject || "—"}</p>
+                  <p className="font-display font-bold text-lg flex items-center gap-2">
+                    {m.subject || "—"}
+                    {m.source === "client" && <span className="text-[10px] uppercase font-bold bg-brand/10 text-brand px-2 py-0.5 rounded-full">Client</span>}
+                  </p>
                   <p className="text-sm text-stone flex items-center gap-2 mt-1">
                     <Mail className="w-3.5 h-3.5" /> {m.name} · {m.email}
                   </p>
@@ -972,6 +1006,31 @@ function MessagesTab() {
                 <span className="text-xs text-stone shrink-0">{new Date(m.created_at).toLocaleDateString(lang)}</span>
               </div>
               <p className="mt-3 text-ink/80 whitespace-pre-wrap">{m.message}</p>
+
+              {(m.replies || []).length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {m.replies.map((rp, i) => (
+                    <div key={i} className="bg-ink/5 border-l-2 border-brand p-3 text-sm" data-testid={`message-reply-${m.id}-${i}`}>
+                      <p className="whitespace-pre-wrap">{rp.message}</p>
+                      <p className="text-xs text-stone mt-1">{rp.by} · {new Date(rp.at).toLocaleDateString(lang)} {rp.sent ? "· envoyé ✓" : "· non envoyé"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {replyFor === m.id ? (
+                <div className="mt-4">
+                  <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={3} placeholder="Votre réponse…" className="w-full px-3 py-2 border border-ink/20 bg-transparent outline-none text-sm" data-testid={`reply-input-${m.id}`} />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => sendReply(m.id)} disabled={sending} className="bg-ink text-cream px-4 py-2 rounded-full text-sm hover:bg-brand transition-colors disabled:opacity-50" data-testid={`reply-send-${m.id}`}>{sending ? "…" : "Envoyer par email"}</button>
+                    <button onClick={() => { setReplyFor(""); setReplyText(""); }} className="border border-ink/20 px-4 py-2 rounded-full text-sm">Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => { setReplyFor(m.id); setReplyText(""); }} className="mt-4 inline-flex items-center gap-1.5 text-sm border border-ink/20 px-4 py-2 rounded-full hover:border-brand hover:text-brand transition-colors" data-testid={`reply-btn-${m.id}`}>
+                  <Send className="w-3.5 h-3.5" /> Répondre
+                </button>
+              )}
             </div>
           ))}
         </div>

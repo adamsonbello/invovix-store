@@ -191,6 +191,24 @@ class BlogInput(BaseModel):
     published: bool = True
 
 
+class ProfileInput(BaseModel):
+    name: str
+    phone: Optional[str] = ""
+    address: Optional[str] = ""
+    city: Optional[str] = ""
+    postal_code: Optional[str] = ""
+    country: Optional[str] = ""
+
+
+class AccountMessageInput(BaseModel):
+    subject: str = ""
+    message: str = Field(min_length=2)
+
+
+class ContactReplyInput(BaseModel):
+    message: str = Field(min_length=1)
+
+
 # ----------------------------- Auth -----------------------------
 def _public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
@@ -247,6 +265,50 @@ async def twofa_login(body: TwoFALoginInput, request: Request):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     return {"user": _public_user(user)}
+
+
+@api.get("/account/profile")
+async def get_profile(user: dict = Depends(get_current_user)):
+    return {
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
+        "phone": user.get("phone", ""),
+        "address": user.get("address", ""),
+        "city": user.get("city", ""),
+        "postal_code": user.get("postal_code", ""),
+        "country": user.get("country", ""),
+    }
+
+
+@api.put("/account/profile")
+async def update_profile(body: ProfileInput, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": body.model_dump()})
+    fresh = await db.users.find_one({"id": user["id"]})
+    return {"ok": True, "profile": {
+        "name": fresh.get("name", ""), "email": fresh.get("email", ""), "phone": fresh.get("phone", ""),
+        "address": fresh.get("address", ""), "city": fresh.get("city", ""),
+        "postal_code": fresh.get("postal_code", ""), "country": fresh.get("country", ""),
+    }}
+
+
+@api.post("/account/message")
+async def account_message(body: AccountMessageInput, user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
+        "subject": body.subject or "Message client",
+        "message": body.message.strip(),
+        "user_id": user["id"],
+        "source": "client",
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.contacts.insert_one(doc)
+    if background_tasks:
+        background_tasks.add_task(brevomod.send_contact_notification, os.environ.get("ADMIN_EMAIL", ""),
+                                  {"name": doc["name"], "email": doc["email"], "subject": doc["subject"], "message": doc["message"]})
+    return {"ok": True}
 
 
 # ----------------------------- Products -----------------------------
@@ -412,6 +474,27 @@ async def contact(body: ContactInput, request: Request, background_tasks: Backgr
 async def list_contacts(admin: dict = Depends(require_area("support"))):
     items = await db.contacts.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items}
+
+
+@api.post("/admin/contacts/{contact_id}/reply")
+async def reply_contact(contact_id: str, body: ContactReplyInput, admin: dict = Depends(require_area("support"))):
+    contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not contact:
+        raise HTTPException(404, "Message introuvable")
+    to_email = contact.get("email")
+    if not to_email:
+        raise HTTPException(400, "Aucune adresse email pour ce contact")
+    subject = f"Re: {contact.get('subject') or 'Votre message'} — Invovix"
+    html = (
+        f"<p>Bonjour {contact.get('name') or ''},</p>"
+        f"<p>{body.message.strip().replace(chr(10), '<br>')}</p>"
+        f"<hr><p style='color:#888;font-size:12px'>En réponse à votre message : « {(contact.get('message') or '')[:200]} »</p>"
+        f"<p>L'équipe Invovix</p>"
+    )
+    sent = brevomod._send_email(to_email, contact.get("name") or "Client", subject, html, body.message.strip())
+    reply = {"message": body.message.strip(), "by": admin.get("name", "Admin"), "at": datetime.now(timezone.utc).isoformat(), "sent": bool(sent)}
+    await db.contacts.update_one({"id": contact_id}, {"$set": {"read": True}, "$push": {"replies": reply}})
+    return {"ok": True, "sent": bool(sent), "brevo_configured": brevomod.brevo_configured()}
 
 
 # ----------------------------- Blog -----------------------------
@@ -683,6 +766,27 @@ async def import_cj_reviews(product_id: str, admin: dict = Depends(require_area(
     await _recompute_product_rating(product_id)
     fresh = await db.products.find_one({"id": product_id}, {"_id": 0, "rating_avg": 1, "rating_count": 1})
     return {"imported": imported, "rating_avg": fresh.get("rating_avg"), "rating_count": fresh.get("rating_count")}
+
+
+@api.post("/admin/products/{product_id}/sync-specs")
+async def sync_product_specs(product_id: str, admin: dict = Depends(require_area("catalog"))):
+    """Récupère/actualise les caractéristiques techniques depuis CJ pour un produit."""
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    cj_pid = product.get("cj_pid")
+    if not cj_pid:
+        raise HTTPException(400, "Ce produit n'est pas lié à CJDropshipping (pas de cj_pid).")
+    if not cjmod.cj_configured():
+        raise HTTPException(503, "Clé API CJDropshipping non configurée")
+    try:
+        data = await cjmod.cj_request("GET", "/product/query", params={"pid": cj_pid})
+    except Exception as e:
+        raise HTTPException(502, f"Erreur CJDropshipping: {e}")
+    detail = data.get("data") or {}
+    specs = cjmod.extract_specs(detail)
+    await db.products.update_one({"id": product_id}, {"$set": {"specs": specs}})
+    return {"ok": True, "specs": specs}
 
 
 # ----------------------------- Admin -----------------------------

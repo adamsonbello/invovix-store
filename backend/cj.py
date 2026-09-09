@@ -112,6 +112,46 @@ def _concise_description(raw_desc: str) -> str:
     return result[:800]
 
 
+def _clean_spec_value(v):
+    """Nettoie une valeur CJ : listes JSON → texte, retire crochets/guillemets, valeurs vides."""
+    s = str(v).strip()
+    # listes type ["Carton"] ou ["A","B"]
+    m = re.findall(r'"([^"]+)"', s)
+    if m:
+        s = ", ".join(m)
+    s = s.strip("[]\"' ").replace("_", " ")
+    return s.strip()
+
+
+def extract_specs(cj: dict) -> dict:
+    """Extrait des caractéristiques techniques exploitables depuis un payload produit CJ."""
+    specs = {}
+    junk = {"", "others", "other", "n/a", "none", "supplier shipped product"}
+
+    def add(label, *keys, suffix="", numeric=False):
+        for k in keys:
+            v = cj.get(k)
+            if v in (None, "", 0, "0"):
+                continue
+            cleaned = _clean_spec_value(v)
+            if cleaned.lower() in junk:
+                continue
+            if not numeric and not re.search(r"[a-zA-Z]", cleaned):  # ignore valeurs non latines (ex: 其他)
+                continue
+            specs[label] = f"{cleaned}{suffix}"
+            return
+
+    add("Poids", "productWeight", "packWeight", "packingWeight", suffix=" g", numeric=True)
+    add("Matière", "materialNameEn", "materialName")
+    add("Emballage", "packingNameEn", "packingName")
+    add("Unité", "productUnit")
+    # Catégorie : garder le dernier segment du chemin CJ
+    cat = cj.get("categoryName")
+    if cat:
+        specs["Catégorie"] = _clean_spec_value(str(cat).split("/")[-1])
+    return specs
+
+
 def normalize_cj_product(cj: dict) -> dict:
     """Map a CJ product detail payload into an Invovix product document."""
     variants = cj.get("variants") or []
@@ -154,6 +194,7 @@ def normalize_cj_product(cj: dict) -> dict:
         "source": "cjdropshipping",
         "cj_pid": cj.get("pid") or cj.get("productId"),
         "cj_variants": variants,
+        "specs": extract_specs(cj),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Package, FileDown, RotateCcw } from "lucide-react";
+import { Package, FileDown, RotateCcw, User, Send } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
 import api, { formatApiError } from "@/lib/api";
@@ -22,6 +22,10 @@ export default function Account() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [loyalty, setLoyalty] = useState(null);
+  const [profile, setProfile] = useState({ name: "", email: "", phone: "", address: "", city: "", postal_code: "", country: "" });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [msg, setMsg] = useState({ subject: "", message: "" });
+  const [sendingMsg, setSendingMsg] = useState(false);
 
   const load = () => {
     api.get("/orders").then((r) => setOrders(r.data.items)).finally(() => setLoading(false));
@@ -31,8 +35,32 @@ export default function Account() {
       setReturns(map);
     }).catch(() => {});
     api.get("/loyalty").then((r) => setLoyalty(r.data)).catch(() => {});
+    api.get("/account/profile").then((r) => setProfile(r.data)).catch(() => {});
   };
   useEffect(() => { load(); }, []);
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    try {
+      const { email, ...payload } = profile;
+      await api.put("/account/profile", payload);
+      toast.success("Coordonnées mises à jour");
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSavingProfile(false); }
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!msg.message.trim()) { toast.error("Écrivez votre message"); return; }
+    setSendingMsg(true);
+    try {
+      await api.post("/account/message", msg);
+      toast.success("Message envoyé à la direction");
+      setMsg({ subject: "", message: "" });
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setSendingMsg(false); }
+  };
 
   const downloadInvoice = async (id) => {
     setBusy(id + "-inv");
@@ -99,6 +127,36 @@ export default function Account() {
             )}
           </div>
         )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          <form onSubmit={saveProfile} className="border border-ink/10 p-6" data-testid="account-profile-form">
+            <p className="font-display font-bold text-xl mb-5 flex items-center gap-2"><User className="w-5 h-5 text-brand" /> Mes coordonnées</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Afield label="Nom complet" value={profile.name} onChange={(v) => setProfile({ ...profile, name: v })} span2 testid="profile-name" />
+              <div className="col-span-2">
+                <label className="text-xs uppercase font-bold text-stone mb-1.5 block">Email</label>
+                <input value={profile.email} readOnly aria-readonly="true" className="w-full px-4 py-2.5 border border-ink/10 bg-ink/5 text-stone outline-none cursor-not-allowed" data-testid="profile-email" />
+              </div>
+              <Afield label="Téléphone" value={profile.phone} onChange={(v) => setProfile({ ...profile, phone: v })} span2 testid="profile-phone" />
+              <Afield label="Adresse" value={profile.address} onChange={(v) => setProfile({ ...profile, address: v })} span2 testid="profile-address" />
+              <Afield label="Ville" value={profile.city} onChange={(v) => setProfile({ ...profile, city: v })} testid="profile-city" />
+              <Afield label="Code postal" value={profile.postal_code} onChange={(v) => setProfile({ ...profile, postal_code: v })} testid="profile-postal" />
+              <Afield label="Pays" value={profile.country} onChange={(v) => setProfile({ ...profile, country: v })} span2 testid="profile-country" />
+            </div>
+            <button type="submit" disabled={savingProfile} className="mt-5 bg-ink text-cream px-6 py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="profile-save-btn">{savingProfile ? "…" : "Enregistrer"}</button>
+          </form>
+
+          <form onSubmit={sendMessage} className="border border-ink/10 p-6" data-testid="account-message-form">
+            <p className="font-display font-bold text-xl mb-2 flex items-center gap-2"><Send className="w-5 h-5 text-brand" /> Contacter la direction</p>
+            <p className="text-stone text-sm mb-5">Une question, une réclamation, une suggestion ? Écrivez-nous, nous vous répondrons par email.</p>
+            <Afield label="Sujet" value={msg.subject} onChange={(v) => setMsg({ ...msg, subject: v })} span2 testid="message-subject" />
+            <div className="mt-3">
+              <label className="text-xs uppercase font-bold text-stone mb-1.5 block">Message</label>
+              <textarea value={msg.message} onChange={(e) => setMsg({ ...msg, message: e.target.value })} rows={5} className="w-full px-4 py-3 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors" data-testid="message-body" />
+            </div>
+            <button type="submit" disabled={sendingMsg} className="mt-4 bg-ink text-cream px-6 py-3 rounded-full font-medium hover:bg-brand transition-colors disabled:opacity-50" data-testid="message-send-btn">{sendingMsg ? "Envoi…" : "Envoyer le message"}</button>
+          </form>
+        </div>
 
         <h2 className="font-display font-bold text-2xl mb-6">{t.account.orders}</h2>
         {loading ? (
@@ -178,6 +236,15 @@ export default function Account() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function Afield({ label, value, onChange, span2, testid }) {
+  return (
+    <div className={span2 ? "col-span-2" : ""}>
+      <label className="text-xs uppercase font-bold text-stone mb-1.5 block">{label}</label>
+      <input value={value || ""} onChange={(e) => onChange(e.target.value)} data-testid={testid} className="w-full px-4 py-2.5 border border-ink/20 bg-transparent outline-none focus:border-ink transition-colors" />
     </div>
   );
 }

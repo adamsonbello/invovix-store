@@ -69,7 +69,7 @@ export default function ProductCard({ product, index = 0 }) {
             <Heart className="w-4 h-4" fill={wished ? "currentColor" : "none"} />
           </button>
           <button
-            onClick={(e) => { e.preventDefault(); toggleCompare(product.id); }}
+            onClick={(e) => { e.preventDefault(); toggleCompare(product); }}
             className={`absolute top-3.5 right-14 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
               inCompare(product.id) ? "bg-ink text-cream" : "bg-cream/80 backdrop-blur text-ink hover:bg-cream"
             }`}

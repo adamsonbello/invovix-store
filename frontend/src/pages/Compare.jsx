@@ -28,6 +28,13 @@ export default function Compare() {
 
   const title = (p) => (lang === "en" ? p.title_en || p.title : p.title);
 
+  const specKeys = Array.from(
+    products.reduce((set, p) => {
+      Object.keys(p.specs || {}).forEach((k) => set.add(k));
+      return set;
+    }, new Set())
+  );
+
   const rows = [
     { label: "Prix", render: (p) => <span className="font-display font-bold text-lg">{p.price?.toFixed(2)}€</span> },
     { label: "Prix barré", render: (p) => (p.compare_at_price > p.price ? <span className="text-stone line-through">{p.compare_at_price.toFixed(2)}€</span> : <Minus className="w-4 h-4 text-stone/40" />) },
@@ -82,6 +89,21 @@ export default function Compare() {
                   <td className="py-4 pr-3 text-xs uppercase tracking-wide font-bold text-stone align-middle">{row.label}</td>
                   {products.map((p) => (
                     <td key={p.id} className="py-4 px-3 align-middle">{row.render(p)}</td>
+                  ))}
+                </tr>
+              ))}
+              {specKeys.length > 0 && (
+                <tr className="border-t-2 border-ink/20" data-testid="compare-specs-section">
+                  <td className="py-3 pr-3 text-xs uppercase tracking-widest font-black text-ink" colSpan={products.length + 1}>Caractéristiques techniques</td>
+                </tr>
+              )}
+              {specKeys.map((key) => (
+                <tr key={`spec-${key}`} className="border-t border-ink/10">
+                  <td className="py-4 pr-3 text-xs uppercase tracking-wide font-bold text-stone align-middle">{key}</td>
+                  {products.map((p) => (
+                    <td key={p.id} className="py-4 px-3 align-middle text-sm" data-testid={`spec-${key}-${p.id}`}>
+                      {(p.specs && p.specs[key]) || <Minus className="w-4 h-4 text-stone/40" />}
+                    </td>
                   ))}
                 </tr>
               ))}
